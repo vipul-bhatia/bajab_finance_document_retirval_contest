@@ -44,15 +44,12 @@ class DocumentManager:
         
         return True, document_name
     
-    def search(self, query: str, top_k: int = None):
-        """Search for relevant chunks"""
+    def get_best_answer(self, query: str):
+        """Get the single best answer for a query"""
         if not self.current_document:
             raise RuntimeError("No document loaded. Call initialize_document() first.")
         
-        if top_k is None:
-            return self.search_engine.search_and_display(query)
-        else:
-            return self.search_engine.search_and_display(query, top_k)
+        return self.search_engine.get_best_answer(query)
     
     def get_document_info(self):
         """Get information about the currently loaded document"""

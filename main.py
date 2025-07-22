@@ -50,7 +50,9 @@ def main():
             # Get document info
             doc_info = document_manager.get_document_info()
             print(f"\n✅ Document Search Ready! Loaded {doc_info['chunk_count']} chunks for document '{doc_info['name']}'.")
-            print("Enter your query (blank to go back to menu):")
+            print("\n🎯 Enter your query to get the best answer:")
+            print("The system will use Gemini to decompose your query, search in parallel, and return the single most relevant result.")
+            print("\nEnter your query (blank to go back to menu):")
             
             # Search loop
             while True:
@@ -59,7 +61,8 @@ def main():
                     break
                 
                 try:
-                    document_manager.search(query)
+                    # Always get the best answer
+                    document_manager.get_best_answer(query)
                 except Exception as e:
                     print(f"Error during search: {e}")
         
