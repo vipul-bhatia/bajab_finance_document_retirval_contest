@@ -1,5 +1,4 @@
 import google.generativeai as genai
-import json
 import concurrent.futures
 from typing import List, Dict, Any
 from ..embeddings import EmbeddingGenerator
@@ -36,38 +35,22 @@ For insurance/medical queries, consider these aspects:
 - Coverage limitations
 - Waiting periods
 
-Return your response as a JSON array of strings, where each string is a focused search query. Make the queries natural and specific.
+Return your response as comma-separated search queries. Make the queries natural and specific.
 
-Example for "46M, knee surgery, Pune, 3-month policy":
-[
-    "46 year old male patient eligibility",
-    "knee surgery coverage insurance",
-    "Pune medical providers network",
-    "3 month waiting period policy",
-    "orthopedic surgery claim requirements"
-]
+Example 1: "46M, knee surgery, Pune, 3-month policy":
+46 year old male patient eligibility, knee surgery coverage insurance, Pune medical providers network, 3 month waiting period policy, orthopedic surgery claim requirements
 
-Your response (JSON array only):"""
+Example 2: "46 year male has knee surgery in Pune in 2024 and the male has a 3-month policy":
+46 year old male patient eligibility, knee surgery coverage insurance, Pune medical providers network, 3 month waiting period policy, orthopedic surgery claim requirements
+
+Your response (comma-separated queries only):"""
 
         try:
             response = self.model.generate_content(prompt)
             response_text = response.text.strip()
             
-            # Extract JSON from response
-            if response_text.startswith('[') and response_text.endswith(']'):
-                search_queries = json.loads(response_text)
-            else:
-                # Fallback: try to find JSON in the response
-                import re
-                json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
-                if json_match:
-                    search_queries = json.loads(json_match.group())
-                else:
-                    # Ultimate fallback: split the original query
-                    search_queries = self._fallback_decompose(query)
-            
-            # Validate and clean queries
-            search_queries = [q.strip() for q in search_queries if q.strip()]
+            # Split by commas and clean up
+            search_queries = [q.strip() for q in response_text.split(',') if q.strip()]
             
             # Ensure we have at least the original query
             if not search_queries:
