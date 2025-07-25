@@ -25,6 +25,11 @@ else:
 DIM = 3072  # Gemini embedding model dimension
 MODEL = "gemini-embedding-001"
 TOP_K = 3  # Return top 3 results
+
+# ─── Document Processing Configuration ───────────────────────────────────────────
+CHUNK_SIZE = 2500  # Characters per chunk (2500 = ~2 chunks per page)
+CHUNK_OVERLAP = 100  # Overlap between chunks
+
 DOCUMENT_PATH = "/Users/vipulbhatia/mycode/competetion_projecs/bajaj_finance_document_retrival_contest/sample_documents/test1.txt"
 
 print(f"Using device: {device}") 

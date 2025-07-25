@@ -28,8 +28,8 @@ Please analyze this query and break it down into 3-5 focused search components. 
 
 For insurance/medical queries, consider these aspects:
 - Demographics (age, gender, location)
-- Medical conditions/procedures 
-- Insurance policy details (duration, coverage, claims)
+- Medical conditions/procedures
+- Insurance policy details (policy name, duration, coverage, claims)
 - Locations/providers
 - Eligibility criteria
 - Coverage limitations
@@ -42,6 +42,9 @@ Example 1: "46M, knee surgery, Pune, 3-month policy":
 
 Example 2: "46 year male has knee surgery in Pune in 2024 and the male has a 3-month policy":
 46 year old male patient eligibility, knee surgery coverage insurance, Pune medical providers network, 3 month waiting period policy, orthopedic surgery claim requirements
+
+Example 3: "What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?":
+grace period for premium payment, National Parivar Mediclaim Plus Policy document, premium payment rules in National Parivar Mediclaim Plus Policy, grace period clause in insurance policy
 
 Your response (comma-separated queries only):"""
 
@@ -59,7 +62,7 @@ Your response (comma-separated queries only):"""
             print(f"🧠 Query decomposed into {len(search_queries)} components:")
             for i, q in enumerate(search_queries, 1):
                 print(f"   {i}. {q}")
-            
+             
             return search_queries
             
         except Exception as e:
@@ -139,5 +142,105 @@ Your response (comma-separated queries only):"""
         print(f"📊 Combined results: {len(unique_results)} unique chunks from {len(all_results)} total results")
         
         return unique_results
+    
+    def should_decompose_query(self, query: str) -> bool:
+        """
+        Use Gemini to decide whether a query should be decomposed or not
+        
+        Args:
+            query: Single query to analyze
+            
+        Returns:
+            True if query should be decomposed, False otherwise
+        """
+        prompt = f"""Analyze this query and decide if it should be broken down into multiple search components or kept as a single search.
+
+Query: "{query}"
+
+Guidelines:
+- Simple, direct questions about specific policy terms should NOT be decomposed.
+- Complex queries with multiple aspects (e.g., age + procedure + location + policy name) SHOULD be decomposed.
+- Questions asking "what is," "how much," or "does policy cover" for a single item are usually simple.
+- Queries containing multiple demographic, medical, or location factors are usually complex.
+- A query about a term within a specifically named policy (e.g., "grace period in National Parivar Mediclaim Plus Policy") is complex because it requires finding the specific policy document and then the specific term within it.
+
+Examples:
+- "What is the grace period?" -> NO (Simple, direct question)
+- "What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?" -> YES (Complex, as it involves a specific policy context)
+- "Does policy cover maternity?" -> NO (Simple coverage question)
+- "46M, knee surgery, Pune, 3-month policy" -> YES (Multiple aspects: age, procedure, location, policy detail)
+- "How does policy define Hospital?" -> NO (Simple definition question)
+
+Based on these guidelines, should the query be decomposed? Answer only: YES or NO"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            answer = response.text.strip().upper()
+            return "YES" in answer
+        except Exception as e:
+            print(f"Error in decomposition decision: {e}")
+            # Fallback: decompose if query has commas or multiple aspects
+            return ',' in query or len(query.split()) > 8
+
+    def process_multiple_queries(self, queries: List[str]) -> List[List[str]]:
+        """
+        Process multiple queries in parallel, deciding decomposition for each
+        
+        Args:
+            queries: List of user queries
+            
+        Returns:
+            List of search query lists (some single, some decomposed)
+        """
+        print(f"🧠 Analyzing {len(queries)} queries for decomposition...")
+        
+        # First, decide decomposition for all queries in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            decompose_futures = {
+                executor.submit(self.should_decompose_query, query): i 
+                for i, query in enumerate(queries)
+            }
+            
+            decomposition_decisions = {}
+            for future in concurrent.futures.as_completed(decompose_futures):
+                query_index = decompose_futures[future]
+                query = queries[query_index]
+                try:
+                    should_decompose = future.result()
+                    decomposition_decisions[query_index] = should_decompose
+                    status = "DECOMPOSE" if should_decompose else "KEEP SINGLE"
+                    print(f"   • '{query[:50]}...' -> {status}")
+                except Exception as e:
+                    print(f"   ❌ Error analyzing '{query[:30]}...': {e}")
+                    decomposition_decisions[query_index] = False
+        
+        # Initialize result list with correct size
+        all_search_queries = [None] * len(queries)
+        
+        # Process queries that need decomposition
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            query_futures = {}
+            
+            for i, query in enumerate(queries):
+                if decomposition_decisions.get(i, False):
+                    # Decompose this query
+                    future = executor.submit(self.analyze_and_decompose_query, query)
+                    query_futures[future] = i
+                else:
+                    # Keep as single query
+                    all_search_queries[i] = [query]
+            
+            # Collect decomposed queries
+            for future in concurrent.futures.as_completed(query_futures):
+                query_index = query_futures[future]
+                try:
+                    decomposed = future.result()
+                    all_search_queries[query_index] = decomposed
+                except Exception as e:
+                    query = queries[query_index]
+                    print(f"   ❌ Error decomposing '{query[:30]}...': {e}")
+                    all_search_queries[query_index] = [query]  # Fallback to single
+        
+        return all_search_queries
     
  

@@ -6,73 +6,70 @@ class QueryEnhancer:
     """Uses Gemini to enhance search results by selecting most relevant items"""
     
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
     
     def get_most_relevant_chunk(self, query: str, search_results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """
-        Use Gemini to pick the most relevant chunk from search results
+        Use Gemini to provide a direct, concise answer based on search results
         
         Args:
             query: Original user query
             search_results: List of search results with text, score, chunk_index
             
         Returns:
-            Most relevant result or None if no results
+            Simple response with direct answer
         """
-        print(f"Search results: {search_results}")
         if not search_results:
             return None
         
         # Format results for Gemini analysis
         results_text = ""
         for i, result in enumerate(search_results, 1):
-            text_preview = result['text'][:300] + "..." if len(result['text']) > 300 else result['text']
-            results_text += f"\n{i}. [Chunk {result['chunk_index']}] (Score: {result['score']:.4f})\n"
-            results_text += f"   Text: {text_preview}\n"
+            results_text += f"\n--- Chunk {result['chunk_index']} ---\n"
+            results_text += f"{result['text']}\n"
             if 'source_query' in result:
-                results_text += f"   Found via: {result['source_query']}\n"
+                results_text += f"[Found via: {result['source_query']}]\n"
             results_text += "\n"
-        
-        prompt = f"""Given the user query: "{query}"
 
-And these search results from a document:
+        print(f"Results texttttt: {results_text}")
+        
+        prompt = f"""Based on the document information, provide a very brief answer to the user's query.
+
+User Query: "{query}"
+
+Retrieved Information:
 {results_text}
 
-Please return ONLY the number (1, 2, 3, 4, 5, etc.) of the most relevant chunk that best answers or relates to the user's query. Consider:
+Instructions:
+- Answer in 1-2 lines maximum
+- Be direct and factual
+- Include only essential details (amounts, timeframes, yes/no)
+- No explanations or elaborations
 
-- How directly the content answers the user's question
-- Relevance to the specific details mentioned in the query
-- Completeness of information provided
-- Context appropriateness
-
-For insurance/medical queries like "{query}", prioritize chunks that contain:
-- Specific eligibility criteria
-- Coverage details for the mentioned condition
-- Policy terms relevant to the situation
-- Location-specific information if mentioned
-
-Return only the number, nothing else."""
+Answer:"""
 
         try:
             response = self.model.generate_content(prompt)
-            choice_text = response.text.strip()
+            answer_text = response.text.strip()
             
-            # Extract number from response
-            import re
-            numbers = re.findall(r'\d+', choice_text)
-            if numbers:
-                choice_num = int(numbers[0])
-                if 1 <= choice_num <= len(search_results):
-                    selected = search_results[choice_num - 1]
-                    print(f"🎯 Gemini selected chunk {selected['chunk_index']} as most relevant")
-                    return selected
+            # Return simple response format
+            result = {
+                'answer': answer_text,
+                'source_chunks': [result['chunk_index'] for result in search_results],
+                'total_chunks_analyzed': len(search_results)
+            }
             
-            # Fallback to highest score if Gemini returns invalid number
-            print("🔄 Using highest-scored result as fallback")
-            return search_results[0]
+            print(f"🧠 Generated concise answer based on {len(search_results)} chunks")
+            
+            return result
             
         except Exception as e:
-            print(f"Error using Gemini for result selection: {e}")
-            return search_results[0]
+            print(f"Error using Gemini for analysis: {e}")
+            # Fallback to basic response
+            return {
+                'answer': f"Unable to analyze the query due to an error: {str(e)}",
+                'source_chunks': [result['chunk_index'] for result in search_results],
+                'total_chunks_analyzed': len(search_results)
+            }
     
  
