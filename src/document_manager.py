@@ -14,17 +14,15 @@ class DocumentManager:
         self.current_document = None
     
     def initialize_document_from_url(self, document_url: str, chunk_size: int = None):
-        """Initialize embeddings from document URL - download, generate embeddings, then load for search"""
+        """Initialize FAISS index from document URL - download, generate embeddings, then load for search"""
         import time
         
         total_start = time.time()
         timing_data = {}
         
-        # Generate document name from URL hash for consistency
         url_hash = hashlib.md5(document_url.encode()).hexdigest()[:12]
         document_name = f"doc_{url_hash}"
         
-        # Step 1: Download and process document
         download_start = time.time()
         print(f"   📥 Downloading document...")
         if chunk_size:
@@ -43,16 +41,15 @@ class DocumentManager:
         chunk_count = len(chunks)
         print(f"   📄 Document processed: {chunk_count} chunks extracted")
         
-        # Step 2: Check database and generate embeddings
         embedding_start = time.time()
         if DatabaseManager.embeddings_exist(document_name, chunk_count):
-            print(f"   💾 Loading existing embeddings from database...")
-            embeddings, document_chunks = DatabaseManager.load_embeddings(chunk_count, document_name)
+            print(f"   💾 Loading existing FAISS index from disk...")
+            faiss_index = DatabaseManager.load_faiss_index(document_name)
             db_time = time.time() - embedding_start
-            timing_data['database_load'] = round(db_time, 2)
-            print(f"   ✅ Database load: {db_time:.2f}s")
+            timing_data['faiss_load'] = round(db_time, 2)
+            print(f"   ✅ FAISS index load: {db_time:.2f}s")
         else:
-            print(f"   🔄 Generating new embeddings...")
+            print(f"   🔄 Generating new FAISS index...")
             embedding_gen_start = time.time()
             DatabaseManager.store_embeddings(chunks, document_name)
             embedding_gen_time = time.time() - embedding_gen_start
@@ -60,14 +57,13 @@ class DocumentManager:
             print(f"   ✅ Embedding generation: {embedding_gen_time:.2f}s")
             
             db_load_start = time.time()
-            embeddings, document_chunks = DatabaseManager.load_embeddings(chunk_count, document_name)
+            faiss_index = DatabaseManager.load_faiss_index(document_name)
             db_load_time = time.time() - db_load_start
-            timing_data['database_load'] = round(db_load_time, 2)
-            print(f"   ✅ Database load: {db_load_time:.2f}s")
+            timing_data['faiss_load'] = round(db_load_time, 2)
+            print(f"   ✅ FAISS index load: {db_load_time:.2f}s")
         
-        # Step 3: Load into search engine
         search_load_start = time.time()
-        self.search_engine.load_embeddings(embeddings, document_chunks, document_name)
+        self.search_engine.load_embeddings(faiss_index, chunks, document_name)
         self.current_document = document_name
         search_load_time = time.time() - search_load_start
         timing_data['search_engine_load'] = round(search_load_time, 2)
@@ -78,21 +74,17 @@ class DocumentManager:
         print(f"   ✅ Search engine load: {search_load_time:.2f}s")
         print(f"   🏁 Total initialization: {total_time:.2f}s")
         
-        # Store timing data for later access
         self.timing_data = timing_data
         
         return True, document_name
     
     def initialize_document(self, document_path: str = DOCUMENT_PATH, document_name: str = None):
-        """Initialize embeddings - generate if needed, then load for search"""
+        """Initialize FAISS index - generate if needed, then load for search"""
         
-        # Generate document name from file path if not provided
         if not document_name:
             document_name = os.path.splitext(os.path.basename(document_path))[0]
-            # Clean document name for use in file name (alphanumeric and underscore only)
             document_name = ''.join(c for c in document_name if c.isalnum() or c == '_')
         
-        # Load document chunks
         chunks = DocumentProcessor.load_document(document_path)
         if not chunks:
             print("No document chunks found. Please provide a valid document.")
@@ -100,17 +92,15 @@ class DocumentManager:
         
         chunk_count = len(chunks)
         
-        # Check if embeddings exist and match the number of chunks
         if DatabaseManager.embeddings_exist(document_name, chunk_count):
-            print(f"✅ Embeddings database already exists, loading from database...")
-            embeddings, document_chunks = DatabaseManager.load_embeddings(chunk_count, document_name)
+            print(f"✅ FAISS index already exists, loading from disk...")
+            faiss_index = DatabaseManager.load_faiss_index(document_name)
         else:
-            print(f"🔄 Generating new embeddings for {document_name}...")
+            print(f"🔄 Generating new FAISS index for {document_name}...")
             DatabaseManager.store_embeddings(chunks, document_name)
-            embeddings, document_chunks = DatabaseManager.load_embeddings(chunk_count, document_name)
+            faiss_index = DatabaseManager.load_faiss_index(document_name)
         
-        # Load into search engine
-        self.search_engine.load_embeddings(embeddings, document_chunks, document_name)
+        self.search_engine.load_embeddings(faiss_index, chunks, document_name)
         self.current_document = document_name
         
         return True, document_name

@@ -4,6 +4,9 @@ FastAPI Document Retrieval API
 Processes documents from URLs and answers questions using intelligent search
 """
 
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from typing import List
