@@ -33,31 +33,37 @@ class DatabaseManager:
     
     @staticmethod
     def store_embeddings(chunks: list, document_name: str):
-        """Generate and store embeddings for all document chunks"""
+        """Generate and store embeddings for all document chunks in parallel (embedding generation only)"""
+        import concurrent.futures
+        
         DatabaseManager.ensure_table_exists(document_name)
-        
         db_path = DatabaseManager.get_db_path(document_name)
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
         
-        # Clear existing data
-        cur.execute("DELETE FROM document_embeddings;")
-        
-        sql = "INSERT INTO document_embeddings(chunk_index, chunk_text, embedding) VALUES(?,?,?);"
-        
-        for idx, chunk in enumerate(chunks):
-            print(f"Processing chunk {idx + 1}/{len(chunks)}")
-            
-            # Get embedding for the chunk
+        def generate_embedding(idx_chunk):
+            idx, chunk = idx_chunk
             vec = EmbeddingGenerator.get_embedding(chunk)
             blob = vec.cpu().numpy().tobytes()
-            
-            # Store in database
-            cur.execute(sql, (idx, chunk, blob))
-            
-            if (idx + 1) % 10 == 0:
-                print(f"Stored embeddings for {idx + 1}/{len(chunks)} chunks")
+            return (idx, chunk, blob)
         
+        # Parallel embedding generation
+        results = []
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            for result in executor.map(generate_embedding, enumerate(chunks)):
+                results.append(result)
+                idx = result[0]
+                if (idx + 1) % 10 == 0 or (idx + 1) == len(chunks):
+                    print(f"Processed embeddings for {idx + 1}/{len(chunks)} chunks")
+        
+        # Sort results by idx to maintain order
+        results.sort(key=lambda x: x[0])
+        
+        # Store in database (single thread)
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM document_embeddings;")
+        sql = "INSERT INTO document_embeddings(chunk_index, chunk_text, embedding) VALUES(?,?,?);"
+        for idx, chunk, blob in results:
+            cur.execute(sql, (idx, chunk, blob))
         conn.commit()
         conn.close()
         print(f"✅ All embeddings stored successfully in {db_path}!")

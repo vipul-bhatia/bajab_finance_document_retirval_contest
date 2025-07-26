@@ -22,8 +22,10 @@ else:
     device = torch.device("cpu")
 
 # ─── Model Configuration ─────────────────────────────────────────────────────────
+# DIM = 1536  # Gemini embedding model dimension
+# MODEL = "gemini-embedding-001"
 DIM = 3072  # Gemini embedding model dimension
-MODEL = "gemini-embedding-001"
+MODEL = "text-embedding-3-large"
 TOP_K = 3  # Return top 3 results
 
 # ─── Document Processing Configuration ───────────────────────────────────────────
