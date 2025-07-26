@@ -29,6 +29,7 @@ class AnswersResponse(BaseModel):
     processing_time: float
     document_chunks: int
     total_questions: int
+    timing_breakdown: dict = None  # Detailed timing for each step
 
 @app.post("/process-document", response_model=AnswersResponse)
 async def process_document_and_questions(request: DocumentQuery):
@@ -41,15 +42,20 @@ async def process_document_and_questions(request: DocumentQuery):
     Returns:
         AnswersResponse with list of answers and metadata
     """
-    start_time = time.time()
+    total_start_time = time.time()
+    timing_data = {}
     
     try:
         # Initialize document manager
+        print(f"🚀 Starting document processing pipeline...")
         document_manager = DocumentManager()
         
-        # Download and process document
-        print(f"🚀 Processing document: {request.documents}")
-        print(f"📏 Using chunk size: {request.chunk_size} characters")
+        # Step 1: Download and process document
+        download_start = time.time()
+        print(f"📥 Step 1: Downloading document from URL...")
+        print(f"   URL: {request.documents}")
+        print(f"   Chunk size: {request.chunk_size} characters")
+        
         success, document_name = document_manager.initialize_document_from_url(str(request.documents), request.chunk_size)
         
         if not success:
@@ -58,21 +64,45 @@ async def process_document_and_questions(request: DocumentQuery):
                 detail="Failed to download or process the document. Please check the URL and try again."
             )
         
-        # Get document info
+        download_time = time.time() - download_start
+        timing_data['document_download_and_processing'] = round(download_time, 2)
+        
+        # Get detailed timing from document manager
+        if hasattr(document_manager, 'timing_data'):
+            timing_data.update(document_manager.timing_data)
+        
+        print(f"✅ Document download & processing completed in {download_time:.2f}s")
+        
+        # Step 2: Get document info and embedding stats
         doc_info = document_manager.get_document_info()
-        print(f"✅ Document ready: {doc_info['chunk_count']} chunks loaded")
+        print(f"📄 Document ready: {doc_info['chunk_count']} chunks loaded")
         
-        # Process all questions in parallel
-        print(f"🎯 Processing {len(request.questions)} questions...")
+        # Step 3: Process all questions in parallel
+        query_start = time.time()
+        print(f"🎯 Step 2: Processing {len(request.questions)} questions...")
         answers = document_manager.process_multiple_queries(request.questions)
+        query_time = time.time() - query_start
+        timing_data['query_processing'] = round(query_time, 2)
         
-        processing_time = time.time() - start_time
+        total_time = time.time() - total_start_time
+        timing_data['total_processing_time'] = round(total_time, 2)
         
-        print(f"🏁 All questions processed in {processing_time:.2f}s")
+        print(f"🏁 All questions processed in {query_time:.2f}s")
+        print(f"🏁 Total pipeline time: {total_time:.2f}s")
+        
+        # Print comprehensive timing summary
+        print(f"\n📊 COMPREHENSIVE TIMING SUMMARY:")
+        print(f"   • Document Download & Processing: {timing_data.get('download_and_processing', 0):.2f}s")
+        if 'embedding_generation' in timing_data:
+            print(f"   • Embedding Generation: {timing_data['embedding_generation']:.2f}s")
+        print(f"   • Database Operations: {timing_data.get('database_load', 0):.2f}s")
+        print(f"   • Search Engine Load: {timing_data.get('search_engine_load', 0):.2f}s")
+        print(f"   • Query Processing: {timing_data['query_processing']:.2f}s")
+        print(f"   • Total Pipeline: {total_time:.2f}s")
         
         return AnswersResponse(
             answers=answers,
-            processing_time=round(processing_time, 2),
+            processing_time=round(total_time, 2),
             document_chunks=doc_info['chunk_count'],
             total_questions=len(request.questions)
         )

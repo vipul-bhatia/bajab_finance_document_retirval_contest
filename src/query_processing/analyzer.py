@@ -8,7 +8,7 @@ class QueryAnalyzer:
     """Intelligent query analysis using Gemini to break down complex queries"""
     
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-lite')
     
     def analyze_and_decompose_query(self, query: str) -> List[str]:
         """

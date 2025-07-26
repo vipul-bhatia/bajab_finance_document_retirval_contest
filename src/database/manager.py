@@ -35,6 +35,9 @@ class DatabaseManager:
     def store_embeddings(chunks: list, document_name: str):
         """Generate and store embeddings for all document chunks in parallel (embedding generation only)"""
         import concurrent.futures
+        import time
+        
+        total_start = time.time()
         
         DatabaseManager.ensure_table_exists(document_name)
         db_path = DatabaseManager.get_db_path(document_name)
@@ -46,18 +49,25 @@ class DatabaseManager:
             return (idx, chunk, blob)
         
         # Parallel embedding generation
+        embedding_start = time.time()
+        print(f"      🔄 Generating embeddings for {len(chunks)} chunks...")
         results = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for result in executor.map(generate_embedding, enumerate(chunks)):
                 results.append(result)
                 idx = result[0]
                 if (idx + 1) % 10 == 0 or (idx + 1) == len(chunks):
-                    print(f"Processed embeddings for {idx + 1}/{len(chunks)} chunks")
+                    print(f"      Processed embeddings for {idx + 1}/{len(chunks)} chunks")
+        
+        embedding_time = time.time() - embedding_start
+        print(f"      ✅ Embedding generation: {embedding_time:.2f}s")
         
         # Sort results by idx to maintain order
         results.sort(key=lambda x: x[0])
         
         # Store in database (single thread)
+        db_start = time.time()
+        print(f"      💾 Storing embeddings in database...")
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         cur.execute("DELETE FROM document_embeddings;")
@@ -66,6 +76,11 @@ class DatabaseManager:
             cur.execute(sql, (idx, chunk, blob))
         conn.commit()
         conn.close()
+        db_time = time.time() - db_start
+        print(f"      ✅ Database storage: {db_time:.2f}s")
+        
+        total_time = time.time() - total_start
+        print(f"      🏁 Total embedding pipeline: {total_time:.2f}s")
         print(f"✅ All embeddings stored successfully in {db_path}!")
     
     @staticmethod

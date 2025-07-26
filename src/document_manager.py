@@ -15,35 +15,71 @@ class DocumentManager:
     
     def initialize_document_from_url(self, document_url: str, chunk_size: int = None):
         """Initialize embeddings from document URL - download, generate embeddings, then load for search"""
+        import time
+        
+        total_start = time.time()
+        timing_data = {}
         
         # Generate document name from URL hash for consistency
         url_hash = hashlib.md5(document_url.encode()).hexdigest()[:12]
         document_name = f"doc_{url_hash}"
         
-        # Download and load document chunks
+        # Step 1: Download and process document
+        download_start = time.time()
+        print(f"   📥 Downloading document...")
         if chunk_size:
             chunks = DocumentProcessor.download_and_process_document_with_size(document_url, chunk_size)
         else:
             chunks = DocumentProcessor.download_and_process_document(document_url)
+        
         if not chunks:
             print("Failed to download or process document from URL.")
             return False, document_name
         
+        download_time = time.time() - download_start
+        timing_data['download_and_processing'] = round(download_time, 2)
+        print(f"   ✅ Download & processing: {download_time:.2f}s")
+        
         chunk_count = len(chunks)
-        print(f"📄 Document processed: {chunk_count} chunks extracted")
+        print(f"   📄 Document processed: {chunk_count} chunks extracted")
         
-        # Check if embeddings exist and match the number of chunks
+        # Step 2: Check database and generate embeddings
+        embedding_start = time.time()
         if DatabaseManager.embeddings_exist(document_name, chunk_count):
-            print(f"✅ Embeddings database already exists, loading from database...")
+            print(f"   💾 Loading existing embeddings from database...")
             embeddings, document_chunks = DatabaseManager.load_embeddings(chunk_count, document_name)
+            db_time = time.time() - embedding_start
+            timing_data['database_load'] = round(db_time, 2)
+            print(f"   ✅ Database load: {db_time:.2f}s")
         else:
-            print(f"🔄 Generating new embeddings for document...")
+            print(f"   🔄 Generating new embeddings...")
+            embedding_gen_start = time.time()
             DatabaseManager.store_embeddings(chunks, document_name)
+            embedding_gen_time = time.time() - embedding_gen_start
+            timing_data['embedding_generation'] = round(embedding_gen_time, 2)
+            print(f"   ✅ Embedding generation: {embedding_gen_time:.2f}s")
+            
+            db_load_start = time.time()
             embeddings, document_chunks = DatabaseManager.load_embeddings(chunk_count, document_name)
+            db_load_time = time.time() - db_load_start
+            timing_data['database_load'] = round(db_load_time, 2)
+            print(f"   ✅ Database load: {db_load_time:.2f}s")
         
-        # Load into search engine
+        # Step 3: Load into search engine
+        search_load_start = time.time()
         self.search_engine.load_embeddings(embeddings, document_chunks, document_name)
         self.current_document = document_name
+        search_load_time = time.time() - search_load_start
+        timing_data['search_engine_load'] = round(search_load_time, 2)
+        
+        total_time = time.time() - total_start
+        timing_data['total_initialization'] = round(total_time, 2)
+        
+        print(f"   ✅ Search engine load: {search_load_time:.2f}s")
+        print(f"   🏁 Total initialization: {total_time:.2f}s")
+        
+        # Store timing data for later access
+        self.timing_data = timing_data
         
         return True, document_name
     

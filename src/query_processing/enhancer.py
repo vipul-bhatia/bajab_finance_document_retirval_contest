@@ -6,7 +6,7 @@ class QueryEnhancer:
     """Uses Gemini to enhance search results by selecting most relevant items"""
     
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-lite')
     
     def get_most_relevant_chunk(self, query: str, search_results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """
@@ -31,7 +31,7 @@ class QueryEnhancer:
                 results_text += f"[Found via: {result['source_query']}]\n"
             results_text += "\n"
 
-        print(f"Results texttttt: {results_text}")
+        # print(f"Results texttttt: {results_text}")
         
         prompt = f"""Based on the document information, provide a very brief answer to the user's query.
 
