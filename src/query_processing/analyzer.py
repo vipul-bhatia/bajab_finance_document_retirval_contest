@@ -2,6 +2,7 @@ import google.generativeai as genai
 import concurrent.futures
 from typing import List, Dict, Any
 from ..embeddings import EmbeddingGenerator
+import json
 
 
 class QueryAnalyzer:
@@ -111,30 +112,77 @@ User Query: "{query}"
         
         return unique_results
     
+    def _batch_analyze_and_decompose(self, queries: List[str]) -> List[List[str]]:
+        """
+        Send a batch of queries to the LLM and return a list of decomposed queries for each input query.
+        """
+        prompt = f"""
+You are an expert at analyzing document search queries. For each query in the following JSON list, decompose it as described:
+
+- If the query is simple, return it as a single-item list.
+- If complex, break it into 3-5 focused, searchable components.
+
+Input:
+{json.dumps(queries, ensure_ascii=False)}
+
+Output (JSON):
+[ ...decomposed queries for each input query as a list of lists... ]
+"""
+        try:
+            response = self.model.generate_content(prompt)
+            response_text = response.text.strip()
+            # Try to extract the JSON part
+            json_start = response_text.find('[')
+            json_end = response_text.rfind(']')
+            if json_start != -1 and json_end != -1:
+                json_str = response_text[json_start:json_end+1]
+            else:
+                json_str = response_text
+            decomposed = json.loads(json_str)
+            if not isinstance(decomposed, list):
+                raise ValueError("LLM did not return a list")
+            # Ensure each item is a list
+            result = []
+            for i, item in enumerate(decomposed):
+                if isinstance(item, list):
+                    result.append([q.strip() for q in item if q.strip()])
+                elif isinstance(item, str):
+                    result.append([item.strip()])
+                else:
+                    result.append([str(item)])
+            print(f"🧠 Batch decomposed {len(queries)} queries.")
+            return result
+        except Exception as e:
+            print(f"Error in batch query analysis: {e}. Falling back to original queries.")
+            return [[q] for q in queries]
+    
     def process_multiple_queries(self, queries: List[str]) -> List[List[str]]:
         """
-        Process multiple queries in parallel, using a single model call for each to analyze and decompose.
+        Process multiple queries using batching: if <=30, send as one batch; if >30, split into batches and process concurrently.
         """
-        print(f"🧠 Analyzing and decomposing {len(queries)} queries in parallel...")
-        
-        all_search_queries = [[]] * len(queries)
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_index = {
-                executor.submit(self.analyze_and_decompose_query, query): i 
-                for i, query in enumerate(queries)
+        print(f"🧠 Analyzing and decomposing {len(queries)} queries (batching mode)...")
+        BATCH_SIZE = 30
+        if len(queries) <= BATCH_SIZE:
+            return self._batch_analyze_and_decompose(queries)
+        # Split into batches and process concurrently
+        batches = [queries[i:i+BATCH_SIZE] for i in range(0, len(queries), BATCH_SIZE)]
+        all_results = [[] for _ in range(len(queries))]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(batches))) as executor:
+            future_to_batch_idx = {
+                executor.submit(self._batch_analyze_and_decompose, batch): batch_idx
+                for batch_idx, batch in enumerate(batches)
             }
-            
-            for future in concurrent.futures.as_completed(future_to_index):
-                index = future_to_index[future]
+            for future in concurrent.futures.as_completed(future_to_batch_idx):
+                batch_idx = future_to_batch_idx[future]
+                batch_start = batch_idx * BATCH_SIZE
                 try:
-                    decomposed_queries = future.result()
-                    all_search_queries[index] = decomposed_queries
+                    batch_results = future.result()
+                    for i, decomposed in enumerate(batch_results):
+                        all_results[batch_start + i] = decomposed
                 except Exception as e:
-                    original_query = queries[index]
-                    print(f"   ❌ Error processing query '{original_query[:30]}...': {e}. Using original query.")
-                    all_search_queries[index] = [original_query]
-        
-        return all_search_queries
+                    print(f"   ❌ Error processing batch {batch_idx+1}: {e}. Using original queries.")
+                    for i in range(len(batches[batch_idx])):
+                        all_results[batch_start + i] = [batches[batch_idx][i]]
+        return all_results
     
  
