@@ -117,41 +117,69 @@ User Query: "{query}"
         Send a batch of queries to the LLM and return a list of decomposed queries for each input query.
         """
         prompt = f"""
-You are an expert at analyzing document search queries. For each query in the following JSON list, decompose it as described:
+You are an expert at analyzing document search queries. Your task is to decompose complex user queries into smaller, searchable parts, while keeping simple queries intact.
 
-- If the query is simple, return it as a single-item list.
-- If complex, break it into 3-5 focused, searchable components.
+For each user query in the input JSON list, you must decide if it's simple or complex.
 
-Input:
+**RULES:**
+
+1.  **Simple Queries:**+ If a query is a single, direct question (especially “coverage for …”, “limit for …”, “how much …”), it is SIMPLE. Do NOT decompose it. Return it as a single-item list in the JSON output.
+    *   *Examples of simple queries:* "How does the policy define a 'Hospital'?", "What is the waiting period for cataract surgery?"
+    *   Example: "What is the extent of coverage for AYUSH treatments?" -> Extent of coverage for AYUSH treatments
+
+2.  **Complex Queries:** If a query combines multiple distinct concepts, conditions, or demographic data, it is COMPLEX. **Decompose it into meaningful, focused, searchable parts.**
+    *   *Decomposition Strategy:* Break it down into components that can be searched for independently.
+    *   *Example 1:* "What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?"
+        *   *Decomposition:* `[
+  "Grace Period definition in National Parivar Mediclaim Plus Policy",
+  "Length of Grace Period for premium payment",
+  "Policy renewal conditions after premium due date"
+]`
+    *   *Example 2:* "46M, knee surgery, Pune, 3-month policy"
+        *   *Decomposition:* `["46 year old male patient eligibility", "knee surgery coverage insurance", "Pune medical providers network", "3 month waiting period policy"]`
+    *   *Example 3:* "Is there a benefit for preventive health check-ups?"
+        *   *Decomposition:* `["preventive health check-ups", "benefit for preventive health check-ups", "health check-ups"]`
+
+**Input Format:** A JSON list of strings, where each string is a user query.
+
+**Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts (or the original query if it was simple).
+
+---
+**Input:**
 {json.dumps(queries, ensure_ascii=False)}
 
-Output (JSON):
-[ ...decomposed queries for each input query as a list of lists... ]
+**Output (JSON):**
 """
         try:
             response = self.model.generate_content(prompt)
             response_text = response.text.strip()
-            # Try to extract the JSON part
-            json_start = response_text.find('[')
-            json_end = response_text.rfind(']')
-            if json_start != -1 and json_end != -1:
-                json_str = response_text[json_start:json_end+1]
-            else:
-                json_str = response_text
-            decomposed = json.loads(json_str)
-            if not isinstance(decomposed, list):
-                raise ValueError("LLM did not return a list")
-            # Ensure each item is a list
+
+            print('response_textttt', response_text)
+            
+            # The model might return the JSON wrapped in markdown, so we extract it.
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            
+            decomposed = json.loads(response_text.strip())
+            
+            if not isinstance(decomposed, list) or len(decomposed) != len(queries):
+                raise ValueError("LLM output is not a list of the same length as the input queries.")
+
+            # Sanitize the output to ensure it's a list of lists of strings
             result = []
-            for i, item in enumerate(decomposed):
+            for item in decomposed:
                 if isinstance(item, list):
-                    result.append([q.strip() for q in item if q.strip()])
+                    result.append([str(q).strip() for q in item if str(q).strip()])
                 elif isinstance(item, str):
                     result.append([item.strip()])
-                else:
-                    result.append([str(item)])
+                else: # Fallback for unexpected types
+                    result.append([queries[len(result)]])
+
             print(f"🧠 Batch decomposed {len(queries)} queries.")
             return result
+            
         except Exception as e:
             print(f"Error in batch query analysis: {e}. Falling back to original queries.")
             return [[q] for q in queries]
