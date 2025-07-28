@@ -177,7 +177,7 @@ class SearchEngine:
         
         search_time = time.time() - search_start
 
-        print('all_search_resultssss', all_search_results)
+        # print('all_search_resultssss', all_search_results)
         
         # Step 3: Generate answers for all queries in parallel
         answer_start = time.time()
