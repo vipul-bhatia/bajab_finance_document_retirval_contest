@@ -15,13 +15,14 @@ class DocumentProcessor:
         print(f"🔄 Processing document from memory...")
         try:
             content = ""
-            if file_extension == 'pdf':
+            # Corrected the condition to check for '.pdf'
+            if file_extension == '.pdf':
                 pdf_reader = PyPDF2.PdfReader(file_stream)
                 for page in pdf_reader.pages:
                     content += page.extract_text() + "\n\n"
             else:
-                # Assuming text for other types
-                content = file_stream.read().decode('utf-8')
+                # Assuming text for other types, which might need more robust handling
+                content = file_stream.read().decode('utf-8', errors='ignore')
 
             chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
             print(f"✅ Processed document and split into {len(chunks)} chunks")
@@ -72,7 +73,6 @@ class DocumentProcessor:
                     content = f.read()
                     
             elif file_extension == 'pdf':
-                # Requires: pip install PyPDF2
                 import PyPDF2
                 with open(file_path, 'rb') as f:
                     pdf_reader = PyPDF2.PdfReader(f)
@@ -80,7 +80,6 @@ class DocumentProcessor:
                         content += page.extract_text() + "\n\n"
                         
             elif file_extension in ['docx', 'doc']:
-                # Requires: pip install python-docx
                 from docx import Document
                 doc = Document(file_path)
                 for para in doc.paragraphs:
@@ -89,7 +88,6 @@ class DocumentProcessor:
             else:
                 raise ValueError(f"Unsupported file format: {file_extension}")
             
-            # Improved chunking algorithm
             chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
             
             print(f"✅ Processed document and split into {len(chunks)} chunks")
@@ -108,36 +106,22 @@ class DocumentProcessor:
         Download document from URL and process it
         """
         try:
-            # Download the document
             print(f"📥 Downloading document from URL...")
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
             
-            # Get file extension from URL or Content-Type
             parsed_url = urlparse(url)
             file_extension = os.path.splitext(parsed_url.path)[1].lower()
             
             if not file_extension:
-                # Try to get extension from Content-Type
                 content_type = response.headers.get('content-type', '').lower()
                 if 'pdf' in content_type:
                     file_extension = '.pdf'
                 else:
                     file_extension = '.pdf'  # Default to PDF
             
-            # Save to temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
-                for chunk in response.iter_content(chunk_size=8192):
-                    temp_file.write(chunk)
-                temp_file_path = temp_file.name
-            
-            print(f"✅ Document downloaded successfully")
-            
-            # Process the downloaded document
-            chunks = DocumentProcessor.load_document(temp_file_path)
-            
-            # Clean up temporary file
-            os.unlink(temp_file_path)
+            with io.BytesIO(response.content) as file_stream:
+                chunks = DocumentProcessor.load_document_from_memory(file_stream, file_extension)
             
             return chunks
             
@@ -152,74 +136,46 @@ class DocumentProcessor:
     def _smart_chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list:
         """
         Improved text chunking algorithm that respects sentence boundaries
-        and ensures proper chunk sizes regardless of document structure.
-        
-        Args:
-            text: The text to chunk
-            chunk_size: Target size for each chunk (in characters)
-            overlap: Number of characters to overlap between chunks
-            
-        Returns:
-            List of text chunks
         """
         if not text.strip():
             return []
         
-        # Clean and normalize the text
         text = text.strip()
-        
-        # First, try to split by paragraphs (double newlines)
         paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
         
         chunks = []
         current_chunk = ""
         
         for paragraph in paragraphs:
-            # If the paragraph itself is larger than chunk_size, split it further
             if len(paragraph) > chunk_size:
-                # If we have content in current_chunk, save it first
                 if current_chunk.strip():
                     chunks.append(current_chunk.strip())
-                    current_chunk = ""
                 
-                # Split large paragraph by sentences
                 sub_chunks = DocumentProcessor._split_large_text(paragraph, chunk_size, overlap)
                 chunks.extend(sub_chunks)
-                
+                current_chunk = ""
             else:
-                # Check if adding this paragraph would exceed chunk_size
                 test_chunk = current_chunk + ("\n\n" + paragraph if current_chunk else paragraph)
-                
                 if len(test_chunk) > chunk_size and current_chunk:
-                    # Save current chunk and start new one
                     chunks.append(current_chunk.strip())
                     current_chunk = paragraph
                 else:
-                    # Add paragraph to current chunk
                     current_chunk = test_chunk
         
-        # Add the last chunk if it exists
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
         
-        # Only filter out completely empty chunks
-        chunks = [chunk for chunk in chunks if chunk.strip()]
-        
-        return chunks
+        return [chunk for chunk in chunks if chunk.strip()]
     
     @staticmethod
     def _split_large_text(text: str, chunk_size: int, overlap: int = CHUNK_OVERLAP) -> list:
         """
-        Split large text that exceeds chunk_size by sentence boundaries.
-        If no sentence boundaries, split by word boundaries.
+        Split large text by sentence boundaries.
         """
         import re
-        
-        # Try to split by sentences first
         sentences = re.split(r'(?<=[.!?])\s+', text)
         
         if len(sentences) == 1:
-            # No sentence boundaries found, split by words
             return DocumentProcessor._split_by_words(text, chunk_size, overlap)
         
         chunks = []
@@ -229,16 +185,12 @@ class DocumentProcessor:
             sentence = sentence.strip()
             if not sentence:
                 continue
-                
+            
             test_chunk = current_chunk + (" " + sentence if current_chunk else sentence)
             
             if len(test_chunk) > chunk_size and current_chunk:
-                # Save current chunk
                 chunks.append(current_chunk.strip())
-                
-                # Start new chunk with overlap if possible
                 if overlap > 0 and len(current_chunk) > overlap:
-                    # Take last 'overlap' characters from previous chunk
                     overlap_text = current_chunk[-overlap:].strip()
                     current_chunk = overlap_text + " " + sentence
                 else:
@@ -246,7 +198,6 @@ class DocumentProcessor:
             else:
                 current_chunk = test_chunk
         
-        # Add the last chunk
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
             
@@ -255,7 +206,7 @@ class DocumentProcessor:
     @staticmethod
     def _split_by_words(text: str, chunk_size: int, overlap: int = CHUNK_OVERLAP) -> list:
         """
-        Split text by word boundaries when sentence splitting isn't possible.
+        Split text by word boundaries.
         """
         words = text.split()
         chunks = []
@@ -265,13 +216,10 @@ class DocumentProcessor:
             test_chunk = current_chunk + (" " + word if current_chunk else word)
             
             if len(test_chunk) > chunk_size and current_chunk:
-                # Save current chunk
                 chunks.append(current_chunk.strip())
-                
-                # Start new chunk with overlap
                 if overlap > 0:
                     current_words = current_chunk.split()
-                    if len(current_words) > 3:  # Keep some context
+                    if len(current_words) > 3:
                         overlap_words = current_words[-3:]
                         current_chunk = " ".join(overlap_words) + " " + word
                     else:
@@ -281,7 +229,6 @@ class DocumentProcessor:
             else:
                 current_chunk = test_chunk
         
-        # Add the last chunk
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
             
