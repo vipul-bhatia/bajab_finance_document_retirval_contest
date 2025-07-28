@@ -153,48 +153,39 @@ class DocumentProcessor:
             return None
     
     @staticmethod
+    def _extract_text_from_page(page):
+        """Helper function to extract text from a single PDF page (for parallel processing)."""
+        return page.get_text()
+
+    @staticmethod
     def load_document_from_memory(file_bytes: bytes, file_extension: str, chunk_size: int = CHUNK_SIZE) -> list:
         """
-        Load document from memory bytes and split into chunks.
-        
-        Args:
-            file_bytes: The bytes of the document.
-            file_extension: The extension of the document (e.g., 'pdf', 'docx').
-            chunk_size: Custom chunk size for processing
-            
-        Returns:
-            List of document chunks.
+        Load document from memory using PyMuPDF with parallel page processing and efficient string handling.
         """
-        print(f"🔄 Processing document from memory...")
+        print(f"🔄 Processing document from memory with PARALLELIZED PyMuPDF...")
         try:
             content = ""
-            
             if file_extension == 'pdf':
-                # Use PyMuPDF (fitz) for much faster PDF processing from memory
-                with fitz.open(stream=file_bytes, filetype="pdf") as doc:
-                    for page in doc:
-                        content += page.get_text() + "\n\n"
-                    
+                doc = fitz.open(stream=file_bytes, filetype="pdf")
+                from concurrent.futures import ThreadPoolExecutor
+                # Parallel extraction of page texts
+                with ThreadPoolExecutor() as executor:
+                    page_texts = list(executor.map(DocumentProcessor._extract_text_from_page, doc))
+                doc.close()
+                content = "\n\n".join(page_texts)
             elif file_extension == 'txt':
-                # Decode bytes to text
                 content = file_bytes.decode('utf-8')
-                    
             elif file_extension in ['docx', 'doc']:
-                # Requires: pip install python-docx
                 from docx import Document
-                doc = Document(io.BytesIO(file_bytes))
-                for para in doc.paragraphs:
-                    content += para.text + "\n\n"
-            
+                import io
+                doc_obj = Document(io.BytesIO(file_bytes))
+                para_texts = [para.text for para in doc_obj.paragraphs]
+                content = "\n\n".join(para_texts)
             else:
                 raise ValueError(f"Unsupported file format for memory loading: {file_extension}")
-            
-            # Improved chunking algorithm
             chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
-            
             print(f"✅ Processed document and split into {len(chunks)} chunks")
             return chunks
-            
         except Exception as e:
             print(f"❌ Error loading document from memory: {e}")
             return []
