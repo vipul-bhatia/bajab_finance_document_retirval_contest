@@ -5,6 +5,7 @@ import requests
 from urllib.parse import urlparse
 from typing import List, Optional
 from ..config import CHUNK_SIZE, CHUNK_OVERLAP
+import time
 
 class DocumentProcessor:
     """Handles document loading and chunking operations"""
@@ -124,8 +125,11 @@ class DocumentProcessor:
         try:
             # Download the document
             print(f"📥 Downloading document from URL...")
+            download_start = time.time()
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
+            download_end = time.time()
+            print(f"Download time: {download_end - download_start} seconds")
             
             # Get file extension from URL or Content-Type
             parsed_url = urlparse(url)
@@ -144,14 +148,21 @@ class DocumentProcessor:
                 for chunk in response.iter_content(chunk_size=1024*1024):
                     temp_file.write(chunk)
                 temp_file_path = temp_file.name
+            save_end = time.time()
+            print(f"Save time: {save_end - download_end} seconds")
             
             print(f"✅ Document downloaded successfully")
             
             # Process the downloaded document with custom chunk size
+            load_start = time.time()
             chunks = DocumentProcessor.load_document(temp_file_path, chunk_size)
+            load_end = time.time()
+            print(f"Load time: {load_end - load_start} seconds")
             
             # Clean up temporary file
             os.unlink(temp_file_path)
+            clean_end = time.time()
+            print(f"Clean time: {clean_end - load_end} seconds")
             
             return chunks
             
