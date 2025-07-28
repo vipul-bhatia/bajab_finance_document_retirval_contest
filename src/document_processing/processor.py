@@ -141,7 +141,7 @@ class DocumentProcessor:
             
             # Save to temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
-                for chunk in response.iter_content(chunk_size=8192):
+                for chunk in response.iter_content(chunk_size=1024*1024):
                     temp_file.write(chunk)
                 temp_file_path = temp_file.name
             

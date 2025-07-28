@@ -1,5 +1,6 @@
 import torch
 import time
+import faiss
 from ..config import TOP_K, device
 from ..embeddings import EmbeddingGenerator
 from ..query_processing import QueryAnalyzer, QueryEnhancer
@@ -11,38 +12,33 @@ class SearchEngine:
     """Handles semantic search operations with intelligent query processing"""
     
     def __init__(self):
-        self.embeddings = None
+        self.faiss_index = None
         self.document_chunks = []
         self.document_name = None
         self.query_analyzer = QueryAnalyzer()
         self.query_enhancer = QueryEnhancer()
     
-    def load_embeddings(self, embeddings: torch.Tensor, chunks: list, document_name: str):
-        """Load embeddings and chunks for search"""
-        self.embeddings = embeddings
+    def load_embeddings(self, faiss_index, chunks: list, document_name: str):
+        """Load FAISS index and chunks for search"""
+        self.faiss_index = faiss_index
         self.document_chunks = chunks
         self.document_name = document_name
     
     def find_relevant_chunks(self, query: str, top_k: int = TOP_K):
-        """Find relevant document chunks using semantic similarity"""
-        if self.embeddings is None or not self.document_chunks:
-            raise RuntimeError("Embeddings not initialized. Load embeddings first.")
+        """Find relevant document chunks using FAISS"""
+        if self.faiss_index is None or not self.document_chunks:
+            raise RuntimeError("FAISS index not initialized. Load index first.")
         
-        # Get query embedding
-        q_vec = EmbeddingGenerator.get_embedding(query)
+        q_vec = EmbeddingGenerator.get_embedding(query).cpu().numpy().reshape(1, -1)
         
-        # Calculate similarities
-        similarities = self.embeddings @ q_vec  # (num_chunks,) on device
-        
-        # Get top results
-        scores, indices = torch.topk(similarities, k=min(top_k, len(self.document_chunks)))
+        distances, indices = self.faiss_index.search(q_vec, top_k)
         
         results = []
-        for score, i in zip(scores, indices):
+        for dist, i in zip(distances[0], indices[0]):
             results.append({
-                "chunk_index": i.item(),
-                "text": self.document_chunks[i.item()],
-                "score": score.item()
+                "chunk_index": i,
+                "text": self.document_chunks[i],
+                "score": 1 - dist  # Convert distance to similarity score
             })
         
         return results
@@ -180,6 +176,8 @@ class SearchEngine:
                 all_search_results.append(results_by_index.get(i, []))
         
         search_time = time.time() - search_start
+
+        print('all_search_resultssss', all_search_results)
         
         # Step 3: Generate answers for all queries in parallel
         answer_start = time.time()
