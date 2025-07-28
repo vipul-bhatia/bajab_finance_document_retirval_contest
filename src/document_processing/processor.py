@@ -1,4 +1,5 @@
 import PyPDF2
+import fitz  # PyMuPDF - much faster than PyPDF2
 import os
 import tempfile
 import requests
@@ -16,7 +17,7 @@ class DocumentProcessor:
         """Load document and split into chunks
         
         Required packages:
-        - PyPDF2: pip install PyPDF2
+        - PyMuPDF: pip install PyMuPDF (much faster than PyPDF2)
         - python-docx: pip install python-docx
         """
         print(f"🔄 Processing document from file...")
@@ -29,12 +30,10 @@ class DocumentProcessor:
                     content = f.read()
                     
             elif file_extension == 'pdf':
-                # Requires: pip install PyPDF2
-                import PyPDF2
-                with open(file_path, 'rb') as f:
-                    pdf_reader = PyPDF2.PdfReader(f)
-                    for page in pdf_reader.pages:
-                        content += page.extract_text() + "\n\n"
+                # Use PyMuPDF (fitz) for much faster PDF processing
+                with fitz.open(stream=file_path, filetype="pdf") as doc:
+                    for page in doc:
+                        content += page.get_text() + "\n\n"
                         
             elif file_extension in ['docx', 'doc']:
                 # Requires: pip install python-docx
@@ -171,11 +170,10 @@ class DocumentProcessor:
             content = ""
             
             if file_extension == 'pdf':
-                # Requires: pip install PyPDF2
-                import PyPDF2
-                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-                for page in pdf_reader.pages:
-                    content += page.extract_text() + "\n\n"
+                # Use PyMuPDF (fitz) for much faster PDF processing from memory
+                with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+                    for page in doc:
+                        content += page.get_text() + "\n\n"
                     
             elif file_extension == 'txt':
                 # Decode bytes to text
