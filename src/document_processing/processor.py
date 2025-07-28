@@ -1,6 +1,6 @@
 import PyPDF2
 import os
-import tempfile
+import io
 import requests
 from urllib.parse import urlparse
 from typing import List, Optional
@@ -8,7 +8,52 @@ from ..config import CHUNK_SIZE, CHUNK_OVERLAP
 
 class DocumentProcessor:
     """Handles document loading and chunking operations"""
-    
+
+    @staticmethod
+    def load_document_from_memory(file_stream: io.BytesIO, file_extension: str, chunk_size: int = CHUNK_SIZE) -> list:
+        """Load document from in-memory stream and split into chunks"""
+        print(f"🔄 Processing document from memory...")
+        try:
+            content = ""
+            if file_extension == 'pdf':
+                pdf_reader = PyPDF2.PdfReader(file_stream)
+                for page in pdf_reader.pages:
+                    content += page.extract_text() + "\n\n"
+            else:
+                # Assuming text for other types
+                content = file_stream.read().decode('utf-8')
+
+            chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
+            print(f"✅ Processed document and split into {len(chunks)} chunks")
+            return chunks
+        except Exception as e:
+            print(f"Error loading document from memory: {e}")
+            return []
+
+    @staticmethod
+    def download_and_process_document_with_size(url: str, chunk_size: int) -> Optional[List[str]]:
+        """
+        Download document from URL and process it with custom chunk size in memory
+        """
+        try:
+            print(f"📥 Downloading document from URL...")
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+
+            file_extension = os.path.splitext(urlparse(url).path)[1].lower() or '.pdf'
+
+            with io.BytesIO(response.content) as file_stream:
+                chunks = DocumentProcessor.load_document_from_memory(file_stream, file_extension, chunk_size)
+
+            return chunks
+
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error downloading document: {e}")
+            return None
+        except Exception as e:
+            print(f"❌ Error processing downloaded document: {e}")
+            return None
+
     @staticmethod
     def load_document(file_path: str, chunk_size: int = CHUNK_SIZE) -> list:
         """Load document and split into chunks
@@ -61,12 +106,6 @@ class DocumentProcessor:
     def download_and_process_document(url: str) -> Optional[List[str]]:
         """
         Download document from URL and process it
-        
-        Args:
-            url: URL of the document to download
-            
-        Returns:
-            List of document chunks or None if failed
         """
         try:
             # Download the document
@@ -96,59 +135,6 @@ class DocumentProcessor:
             
             # Process the downloaded document
             chunks = DocumentProcessor.load_document(temp_file_path)
-            
-            # Clean up temporary file
-            os.unlink(temp_file_path)
-            
-            return chunks
-            
-        except requests.exceptions.RequestException as e:
-            print(f"❌ Error downloading document: {e}")
-            return None
-        except Exception as e:
-            print(f"❌ Error processing downloaded document: {e}")
-            return None
-    
-    @staticmethod
-    def download_and_process_document_with_size(url: str, chunk_size: int) -> Optional[List[str]]:
-        """
-        Download document from URL and process it with custom chunk size
-        
-        Args:
-            url: URL of the document to download
-            chunk_size: Custom chunk size for processing
-            
-        Returns:
-            List of document chunks or None if failed
-        """
-        try:
-            # Download the document
-            print(f"📥 Downloading document from URL...")
-            response = requests.get(url, stream=True, timeout=30)
-            response.raise_for_status()
-            
-            # Get file extension from URL or Content-Type
-            parsed_url = urlparse(url)
-            file_extension = os.path.splitext(parsed_url.path)[1].lower()
-            
-            if not file_extension:
-                # Try to get extension from Content-Type
-                content_type = response.headers.get('content-type', '').lower()
-                if 'pdf' in content_type:
-                    file_extension = '.pdf'
-                else:
-                    file_extension = '.pdf'  # Default to PDF
-            
-            # Save to temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
-                for chunk in response.iter_content(chunk_size=1024*1024):
-                    temp_file.write(chunk)
-                temp_file_path = temp_file.name
-            
-            print(f"✅ Document downloaded successfully")
-            
-            # Process the downloaded document with custom chunk size
-            chunks = DocumentProcessor.load_document(temp_file_path, chunk_size)
             
             # Clean up temporary file
             os.unlink(temp_file_path)
