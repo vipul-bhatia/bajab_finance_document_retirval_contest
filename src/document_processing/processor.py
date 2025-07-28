@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 from typing import List, Optional
 from ..config import CHUNK_SIZE, CHUNK_OVERLAP
 import time
+import email
+import extract_msg
 
 class DocumentProcessor:
     """Handles document loading and chunking operations"""
@@ -19,6 +21,7 @@ class DocumentProcessor:
         Required packages:
         - PyMuPDF: pip install PyMuPDF (much faster than PyPDF2)
         - python-docx: pip install python-docx
+        - extract-msg: pip install extract-msg
         """
         print(f"🔄 Processing document from file...")
         try:
@@ -41,6 +44,24 @@ class DocumentProcessor:
                 doc = Document(file_path)
                 for para in doc.paragraphs:
                     content += para.text + "\n\n"
+
+            elif file_extension == 'eml':
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    msg = email.message_from_file(f)
+                    # Get email body
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                content += part.get_payload(decode=True).decode() + "\n\n"
+                    else:
+                        content = msg.get_payload(decode=True).decode()
+                    # Add subject and other metadata
+                    content = f"Subject: {msg['subject']}\n\nFrom: {msg['from']}\n\nTo: {msg['to']}\n\n{content}"
+
+            elif file_extension == 'msg':
+                msg = extract_msg.Message(file_path)
+                content = f"Subject: {msg.subject}\n\nFrom: {msg.sender}\n\nTo: {msg.to}\n\n{msg.body}"
+                msg.close()
             
             else:
                 raise ValueError(f"Unsupported file format: {file_extension}")
@@ -181,6 +202,27 @@ class DocumentProcessor:
                 doc_obj = Document(io.BytesIO(file_bytes))
                 para_texts = [para.text for para in doc_obj.paragraphs]
                 content = "\n\n".join(para_texts)
+            elif file_extension == 'eml':
+                msg = email.message_from_bytes(file_bytes)
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/plain":
+                            content += part.get_payload(decode=True).decode() + "\n\n"
+                else:
+                    content = msg.get_payload(decode=True).decode()
+                content = f"Subject: {msg['subject']}\n\nFrom: {msg['from']}\n\nTo: {msg['to']}\n\n{content}"
+            elif file_extension == 'msg':
+                # Write bytes to temp file since extract-msg needs a file
+                with tempfile.NamedTemporaryFile(suffix='.msg', delete=False) as temp_file:
+                    temp_file.write(file_bytes)
+                    temp_path = temp_file.name
+                
+                try:
+                    msg = extract_msg.Message(temp_path)
+                    content = f"Subject: {msg.subject}\n\nFrom: {msg.sender}\n\nTo: {msg.to}\n\n{msg.body}"
+                    msg.close()
+                finally:
+                    os.unlink(temp_path)  # Clean up temp file
             else:
                 raise ValueError(f"Unsupported file format for memory loading: {file_extension}")
             chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
