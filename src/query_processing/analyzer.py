@@ -172,9 +172,6 @@ User Query: "{query}"
     *   *Example 3:* "Is there a benefit for preventive health check-ups?"
         *   *Decomposition:* `["preventive health check-ups", "benefit for preventive health check-ups", "health check-ups"]`
 
-**Input Format:** A JSON list of strings, where each string is a user query.
-
-**Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts (or the original query if it was simple).
 
 **OPTIMIZATION PRINCIPLES:**
 
@@ -183,6 +180,11 @@ User Query: "{query}"
 3. **Avoid Over-decomposition**: Don't break simple concepts unnecessarily
 4. **Context Preservation**: Keep related terms together when meaningful
 5. **Semantic Clarity**: Each component should be semantically complete
+
+**Input Format:** A JSON list of strings, where each string is a user query.
+
+**Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts (or the original query if it was simple).
+
 ---
 **Input:**
 {json.dumps(queries, ensure_ascii=False)}

@@ -63,6 +63,8 @@ async def process_document_and_questions(
         AnswersResponse with list of answers
     """
     total_start_time = time.time()
+
+    print(f"Received document URL: {request.documents}")
     
     try:
         # Initialize document manager
