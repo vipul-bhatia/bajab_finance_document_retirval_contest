@@ -65,7 +65,7 @@ class SearchEngine:
         
         # Step 2: Execute parallel searches and return ALL unique results
         parallel_start = time.time()
-        all_results = self.query_analyzer.parallel_search(self, search_queries, top_k_per_query=3)
+        all_results = self.query_analyzer.parallel_search(self, search_queries, top_k_per_query=TOP_K)
         parallel_time = time.time() - parallel_start
         
         print(f"📊 Returning all {len(all_results)} unique results from parallel search")
