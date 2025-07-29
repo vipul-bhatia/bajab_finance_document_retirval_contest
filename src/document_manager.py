@@ -26,9 +26,9 @@ class DocumentManager:
         download_start = time.time()
         print(f"   📥 Downloading document...")
         if chunk_size:
-            chunks = DocumentProcessor.download_and_process_document_with_size(document_url, chunk_size)
+            chunks, num_pages = DocumentProcessor.download_and_process_document_with_size(document_url, chunk_size)
         else:
-            chunks = DocumentProcessor.download_and_process_document(document_url)
+            chunks, num_pages = DocumentProcessor.download_and_process_document(document_url)
         
         if not chunks:
             print("Failed to download or process document from URL.")
@@ -39,7 +39,7 @@ class DocumentManager:
         print(f"   ✅ Download & processing: {download_time:.2f}s")
         
         chunk_count = len(chunks)
-        print(f"   📄 Document processed: {chunk_count} chunks extracted")
+        print(f"   📄 Document processed: {chunk_count} chunks extracted from {num_pages} pages")
         
         embedding_start = time.time()
         if DatabaseManager.embeddings_exist(document_name, chunk_count):
@@ -63,7 +63,7 @@ class DocumentManager:
             print(f"   ✅ FAISS index load: {db_load_time:.2f}s")
         
         search_load_start = time.time()
-        self.search_engine.load_embeddings(faiss_index, chunks, document_name)
+        self.search_engine.load_embeddings(faiss_index, chunks, document_name, num_pages)
         self.current_document = document_name
         search_load_time = time.time() - search_load_start
         timing_data['search_engine_load'] = round(search_load_time, 2)
@@ -85,12 +85,13 @@ class DocumentManager:
             document_name = os.path.splitext(os.path.basename(document_path))[0]
             document_name = ''.join(c for c in document_name if c.isalnum() or c == '_')
         
-        chunks = DocumentProcessor.load_document(document_path)
+        chunks, num_pages = DocumentProcessor.load_document(document_path)
         if not chunks:
             print("No document chunks found. Please provide a valid document.")
             return False, document_name
         
         chunk_count = len(chunks)
+        print(f"   📄 Document processed: {chunk_count} chunks extracted from {num_pages} pages")
         
         if DatabaseManager.embeddings_exist(document_name, chunk_count):
             print(f"✅ FAISS index already exists, loading from disk...")
@@ -100,7 +101,7 @@ class DocumentManager:
             DatabaseManager.store_embeddings(chunks, document_name)
             faiss_index = DatabaseManager.load_faiss_index(document_name)
         
-        self.search_engine.load_embeddings(faiss_index, chunks, document_name)
+        self.search_engine.load_embeddings(faiss_index, chunks, document_name, num_pages)
         self.current_document = document_name
         
         return True, document_name

@@ -1,7 +1,7 @@
 import torch
 import time
 import faiss
-from ..config import TOP_K, device
+from ..config import BASE_TOP_K, TOP_K_PER_10_PAGES, device
 from ..embeddings import EmbeddingGenerator
 from ..query_processing import QueryAnalyzer, QueryEnhancer
 from typing import List
@@ -15,20 +15,30 @@ class SearchEngine:
         self.faiss_index = None
         self.document_chunks = []
         self.document_name = None
+        self.num_pages = 0  # Store document page count
         self.query_analyzer = QueryAnalyzer()
         self.query_enhancer = QueryEnhancer()
     
-    def load_embeddings(self, faiss_index, chunks: list, document_name: str):
-        """Load FAISS index and chunks for search"""
+    def load_embeddings(self, faiss_index, chunks: list, document_name: str, num_pages: int):
+        """Load FAISS index, chunks, and document metadata for search"""
         self.faiss_index = faiss_index
         self.document_chunks = chunks
         self.document_name = document_name
+        self.num_pages = num_pages
     
-    def find_relevant_chunks(self, query: str, top_k: int = TOP_K):
-        """Find relevant document chunks using FAISS"""
+    def _get_dynamic_top_k(self) -> int:
+        """Calculate dynamic Top-K based on document size."""
+        return BASE_TOP_K + (self.num_pages // 10 * TOP_K_PER_10_PAGES)
+
+    def find_relevant_chunks(self, query: str, top_k: int = None):
+        """Find relevant document chunks using FAISS with dynamic Top-K."""
         if self.faiss_index is None or not self.document_chunks:
             raise RuntimeError("FAISS index not initialized. Load index first.")
         
+        # Use dynamic Top-K if not specified
+        if top_k is None:
+            top_k = self._get_dynamic_top_k()
+
         q_vec = EmbeddingGenerator.get_embedding(query).cpu().numpy().reshape(1, -1)
         
         distances, indices = self.faiss_index.search(q_vec, top_k)
@@ -63,9 +73,13 @@ class SearchEngine:
         search_queries = self.query_analyzer.analyze_and_decompose_query(query)
         decompose_time = time.time() - decompose_start
         
+        # Get dynamic Top-K for this search
+        dynamic_top_k = self._get_dynamic_top_k()
+        print(f"   -> Dynamic Top-K: {dynamic_top_k} (based on {self.num_pages} pages)")
+
         # Step 2: Execute parallel searches and return ALL unique results
         parallel_start = time.time()
-        all_results = self.query_analyzer.parallel_search(self, search_queries, top_k_per_query=TOP_K)
+        all_results = self.query_analyzer.parallel_search(self, search_queries, top_k_per_query=dynamic_top_k)
         parallel_time = time.time() - parallel_start
         
         print(f"📊 Returning all {len(all_results)} unique results from parallel search")

@@ -26,11 +26,19 @@ else:
 # MODEL = "gemini-embedding-001"
 DIM = 3072  # Gemini embedding model dimension
 MODEL = "text-embedding-3-large"
-TOP_K = 5  # Return top 3 results
+
 
 # ─── Document Processing Configuration ───────────────────────────────────────────
-CHUNK_SIZE = 1400  # Characters per chunk (2500 = ~2 chunks per page)
-CHUNK_OVERLAP = 100  # Overlap between chunks
+CHUNK_OVERLAP = 150  # Overlap between chunks
+
+# ─── Adaptive Configuration ──────────────────────────────────────────────────────
+# Base chunk size and Top-K values
+BASE_CHUNK_SIZE = 1300
+BASE_TOP_K = 5
+
+# Factors for dynamic adjustment
+CHUNK_SIZE_PER_PAGE = 50  # Increase chunk size by 50 for each page
+TOP_K_PER_10_PAGES = 1  # Increase Top-K by 1 for every 10 pages
 
 # ─── Download Optimization Configuration ─────────────────────────────────────────
 DOWNLOAD_PARALLEL_WORKERS = 4  # Number of parallel download workers

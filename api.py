@@ -73,9 +73,8 @@ async def process_document_and_questions(
         download_start = time.time()
         print(f"📥 Step 1: Downloading document from URL...")
         print(f"   URL: {request.documents}")
-        print(f"   Chunk size: 2500 characters")
         
-        success, document_name = document_manager.initialize_document_from_url(str(request.documents), 1400)
+        success, document_name = document_manager.initialize_document_from_url(str(request.documents))
         
         if not success:
             raise HTTPException(

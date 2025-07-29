@@ -6,16 +6,16 @@ import requests
 import io
 from urllib.parse import urlparse
 from typing import List, Optional
-from ..config import CHUNK_SIZE, CHUNK_OVERLAP
+from ..config import BASE_CHUNK_SIZE, CHUNK_SIZE_PER_PAGE, CHUNK_OVERLAP
 import time
-import email
+import email    
 import extract_msg
 
 class DocumentProcessor:
     """Handles document loading and chunking operations"""
     
     @staticmethod
-    def load_document(file_path: str, chunk_size: int = CHUNK_SIZE) -> list:
+    def load_document(file_path: str) -> list:
         """Load document and split into chunks
         
         Required packages:
@@ -23,54 +23,56 @@ class DocumentProcessor:
         - python-docx: pip install python-docx
         - extract-msg: pip install extract-msg
         """
+        from ..config import BASE_CHUNK_SIZE, CHUNK_SIZE_PER_PAGE, CHUNK_OVERLAP
+
         print(f"🔄 Processing document from file...")
         try:
-            content = ""
-            file_extension = file_path.lower().split('.')[-1]
+            with open(file_path, 'rb') as f:
+                file_bytes = f.read()
             
+            file_extension = file_path.lower().split('.')[-1]
+
+            # Estimate document size (pages)
+            num_pages = DocumentProcessor._estimate_doc_pages(file_bytes, file_extension)
+            
+            # Dynamically adjust chunk size
+            adaptive_chunk_size = BASE_CHUNK_SIZE + (num_pages * CHUNK_SIZE_PER_PAGE)
+            print(f"   -> Estimated pages: {num_pages}, Adaptive chunk size: {adaptive_chunk_size}")
+
+            content = ""
             if file_extension == 'txt':
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    
+                content = file_bytes.decode('utf-8')
             elif file_extension == 'pdf':
-                # Use PyMuPDF (fitz) for much faster PDF processing
-                with fitz.open(stream=file_path, filetype="pdf") as doc:
+                with fitz.open(stream=file_bytes, filetype="pdf") as doc:
                     for page in doc:
                         content += page.get_text() + "\n\n"
-                        
             elif file_extension in ['docx', 'doc']:
-                # Requires: pip install python-docx
                 from docx import Document
-                doc = Document(file_path)
+                import io
+                doc = Document(io.BytesIO(file_bytes))
                 for para in doc.paragraphs:
                     content += para.text + "\n\n"
-
             elif file_extension == 'eml':
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    msg = email.message_from_file(f)
-                    # Get email body
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            if part.get_content_type() == "text/plain":
-                                content += part.get_payload(decode=True).decode() + "\n\n"
-                    else:
-                        content = msg.get_payload(decode=True).decode()
-                    # Add subject and other metadata
-                    content = f"Subject: {msg['subject']}\n\nFrom: {msg['from']}\n\nTo: {msg['to']}\n\n{content}"
-
+                msg = email.message_from_bytes(file_bytes)
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/plain":
+                            content += part.get_payload(decode=True).decode() + "\n\n"
+                else:
+                    content = msg.get_payload(decode=True).decode()
+                content = f"Subject: {msg['subject']}\n\nFrom: {msg['from']}\n\nTo: {msg['to']}\n\n{content}"
             elif file_extension == 'msg':
                 msg = extract_msg.Message(file_path)
                 content = f"Subject: {msg.subject}\n\nFrom: {msg.sender}\n\nTo: {msg.to}\n\n{msg.body}"
                 msg.close()
-            
             else:
                 raise ValueError(f"Unsupported file format: {file_extension}")
             
             # Improved chunking algorithm
-            chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
+            chunks = DocumentProcessor._smart_chunk_text(content, adaptive_chunk_size, CHUNK_OVERLAP)
             
             print(f"✅ Processed document and split into {len(chunks)} chunks")
-            return chunks
+            return chunks, num_pages
             
         except FileNotFoundError:
             print(f"Document file '{file_path}' not found. Please provide the document.")
@@ -111,9 +113,9 @@ class DocumentProcessor:
             print(f"✅ Document downloaded successfully")
             
             # Process the downloaded document from memory
-            chunks = DocumentProcessor.load_document_from_memory(response.content, file_extension)
+            chunks, num_pages = DocumentProcessor.load_document_from_memory(response.content, file_extension)
             
-            return chunks
+            return chunks, num_pages
             
         except requests.exceptions.RequestException as e:
             print(f"❌ Error downloading document: {e}")
@@ -159,12 +161,12 @@ class DocumentProcessor:
                     file_extension = 'pdf'  # Default to PDF
 
             # Call the new in-memory processing function
-            chunks = DocumentProcessor.load_document_from_memory(response.content, file_extension, chunk_size)
+            chunks, num_pages = DocumentProcessor.load_document_from_memory(response.content, file_extension, chunk_size)
             
             processing_end = time.time()
             print(f"   -> In-memory processing time: {processing_end - processing_start:.2f} seconds")
             
-            return chunks
+            return chunks, num_pages
             
         except requests.exceptions.RequestException as e:
             print(f"❌ Error downloading document: {e}")
@@ -179,17 +181,52 @@ class DocumentProcessor:
         return page.get_text()
 
     @staticmethod
-    def load_document_from_memory(file_bytes: bytes, file_extension: str, chunk_size: int = CHUNK_SIZE) -> list:
+    def _estimate_doc_pages(file_bytes: bytes, file_extension: str) -> int:
+        """Estimate the number of pages in a document."""
+        if file_extension == 'pdf':
+            try:
+                doc = fitz.open(stream=file_bytes, filetype="pdf")
+                return doc.page_count
+            except Exception:
+                return 10  # Default for PDFs
+        elif file_extension in ['docx', 'doc']:
+            # Estimate pages based on word count (approx. 250 words/page)
+            try:
+                import io
+                from docx import Document
+                doc = Document(io.BytesIO(file_bytes))
+                word_count = sum(len(p.text.split()) for p in doc.paragraphs)
+                return max(1, word_count // 250)
+            except Exception:
+                return 10
+        else:
+            # For text files, estimate based on character count
+            return max(1, len(file_bytes) // 3000)
+
+    @staticmethod
+    def load_document_from_memory(file_bytes: bytes, file_extension: str, chunk_size: int = None) -> list:
         """
-        Load document from memory using PyMuPDF with parallel page processing and efficient string handling.
+        Load document from memory with adaptive chunking.
         """
-        print(f"🔄 Processing document from memory with PARALLELIZED PyMuPDF...")
+        from ..config import BASE_CHUNK_SIZE, CHUNK_SIZE_PER_PAGE, CHUNK_OVERLAP
+
+        print(f"🔄 Processing document from memory with ADAPTIVE chunking...")
         try:
+            # Estimate document size (pages)
+            num_pages = DocumentProcessor._estimate_doc_pages(file_bytes, file_extension)
+            
+            # Dynamically adjust chunk size
+            if chunk_size is None:
+                adaptive_chunk_size = BASE_CHUNK_SIZE + (num_pages * CHUNK_SIZE_PER_PAGE)
+                print(f"   -> Estimated pages: {num_pages}, Adaptive chunk size: {adaptive_chunk_size}")
+            else:
+                adaptive_chunk_size = chunk_size
+                print(f"   -> Using fixed chunk size: {adaptive_chunk_size}")
+
             content = ""
             if file_extension == 'pdf':
                 doc = fitz.open(stream=file_bytes, filetype="pdf")
                 from concurrent.futures import ThreadPoolExecutor
-                # Parallel extraction of page texts
                 with ThreadPoolExecutor() as executor:
                     page_texts = list(executor.map(DocumentProcessor._extract_text_from_page, doc))
                 doc.close()
@@ -212,7 +249,6 @@ class DocumentProcessor:
                     content = msg.get_payload(decode=True).decode()
                 content = f"Subject: {msg['subject']}\n\nFrom: {msg['from']}\n\nTo: {msg['to']}\n\n{content}"
             elif file_extension == 'msg':
-                # Write bytes to temp file since extract-msg needs a file
                 with tempfile.NamedTemporaryFile(suffix='.msg', delete=False) as temp_file:
                     temp_file.write(file_bytes)
                     temp_path = temp_file.name
@@ -222,18 +258,19 @@ class DocumentProcessor:
                     content = f"Subject: {msg.subject}\n\nFrom: {msg.sender}\n\nTo: {msg.to}\n\n{msg.body}"
                     msg.close()
                 finally:
-                    os.unlink(temp_path)  # Clean up temp file
+                    os.unlink(temp_path)
             else:
                 raise ValueError(f"Unsupported file format for memory loading: {file_extension}")
-            chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
+            
+            chunks = DocumentProcessor._smart_chunk_text(content, adaptive_chunk_size, CHUNK_OVERLAP)
             print(f"✅ Processed document and split into {len(chunks)} chunks")
-            return chunks
+            return chunks, num_pages
         except Exception as e:
             print(f"❌ Error loading document from memory: {e}")
-            return []
+            return [], 0
     
     @staticmethod
-    def _smart_chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list:
+    def _smart_chunk_text(text: str, chunk_size: int = BASE_CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list:
         """
         Improved text chunking algorithm that respects sentence boundaries
         and ensures proper chunk sizes regardless of document structure.
