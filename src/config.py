@@ -26,17 +26,16 @@ else:
 # MODEL = "gemini-embedding-001"
 DIM = 3072  # Gemini embedding model dimension
 MODEL = "text-embedding-3-large"
-TOP_K = 3  # Return top 3 results
+TOP_K = 6  # Return top 3 results
 
 # ─── Document Processing Configuration ───────────────────────────────────────────
-CHUNK_SIZE = 2500  # Characters per chunk (2500 = ~2 chunks per page)
+CHUNK_SIZE = 1000  # Characters per chunk (2500 = ~2 chunks per page)
 CHUNK_OVERLAP = 100  # Overlap between chunks
 
 # ─── Download Optimization Configuration ─────────────────────────────────────────
 DOWNLOAD_PARALLEL_WORKERS = 4  # Number of parallel download workers
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB chunks for parallel download
 ENABLE_DOCUMENT_CACHE = True  # Enable document caching
-CACHE_DIR = "document_cache"  # Cache directory name
 
 DOCUMENT_PATH = "/Users/vipulbhatia/mycode/competetion_projecs/bajaj_finance_document_retrival_contest/sample_documents/test1.txt"
 
