@@ -176,6 +176,13 @@ User Query: "{query}"
 
 **Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts (or the original query if it was simple).
 
+**OPTIMIZATION PRINCIPLES:**
+
+1. **Preserve Intent**: Maintain the user's original question intent
+2. **Enhance Searchability**: Use terms likely to appear in relevant documents
+3. **Avoid Over-decomposition**: Don't break simple concepts unnecessarily
+4. **Context Preservation**: Keep related terms together when meaningful
+5. **Semantic Clarity**: Each component should be semantically complete
 ---
 **Input:**
 {json.dumps(queries, ensure_ascii=False)}
