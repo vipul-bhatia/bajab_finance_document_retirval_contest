@@ -36,6 +36,7 @@ class QueryEnhancer:
 3.  **Direct, User-Friendly Tone:** Adopt a helpful, expert, human-like tone. **Crucially, do NOT use phrases like 'The provided text states,' 'According to the document,' or 'Based on the information.'** Just state the answer directly as a fact from the policy.
 4.  **Be Factual, Precise and Absolute Fidelity to the Source:** Base your answer strictly on the details found in the `Retrieved Information`. Do not infer or add information not present in the text. If the context is insufficient, state that the answer cannot be found in the provided information.
 5.  **Synthesize for Completeness:** Carefully analyze all provided text chunks. If multiple chunks contribute to the answer, you must synthesize them into a single, coherent, and comprehensive response. Ensure every part of the user's query is addressed. You *MUST NOT* omit any relevant details to make it shorter. Accuracy is more important than conciseness.
+6.  **Final Verification:** Perform a check by comparing your drafted answer against the original user query. You must verify that every single component, question, and condition mentioned in the query has been fully and explicitly addressed.
 
 --- EXAMPLES ---
 

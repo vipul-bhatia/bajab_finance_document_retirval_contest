@@ -1,5 +1,6 @@
 import google.generativeai as genai
 import concurrent.futures
+import time
 from typing import List, Dict, Any
 from ..embeddings import EmbeddingGenerator
 import json
@@ -10,6 +11,34 @@ class QueryAnalyzer:
     
     def __init__(self):
         self.model = genai.GenerativeModel('gemini-2.5-flash-lite')
+    
+    def _retry_with_backoff(self, func, max_retries=2, backoff_factor=1):
+        """
+        Execute a function with retry logic and exponential backoff.
+        
+        Args:
+            func: Function to execute
+            max_retries: Maximum number of attempts (default: 2)
+            backoff_factor: Base delay between retries in seconds
+        
+        Returns:
+            Result of the function or raises the last exception
+        """
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except Exception as e:
+                last_exception = e
+                if attempt < max_retries - 1:  # Don't sleep on the last attempt
+                    delay = backoff_factor * (2 ** attempt)
+                    print(f"   ⚠️ Attempt {attempt + 1} failed: {e}. Retrying in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    print(f"   ❌ All {max_retries} attempts failed. Final error: {e}")
+        
+        raise last_exception
     
     def analyze_and_decompose_query(self, query: str) -> List[str]:
         """
@@ -49,9 +78,12 @@ User Query: "{query}"
 **User Query:** "{query}"
 **Your Response:**"""
 
-        try:
+        def _make_api_call():
             response = self.model.generate_content(prompt)
-            response_text = response.text.strip()
+            return response.text.strip()
+
+        try:
+            response_text = self._retry_with_backoff(_make_api_call)
             
             search_queries = [q.strip() for q in response_text.split(',') if q.strip()]
             
@@ -68,7 +100,7 @@ User Query: "{query}"
             return search_queries
             
         except Exception as e:
-            print(f"Error in query analysis: {e}. Falling back to original query.")
+            print(f"Error in query analysis after all retries: {e}. Falling back to original query.")
             return [query]
     
     def parallel_search(self, search_engine, search_queries: List[str], top_k_per_query: int = 3) -> List[Dict[str, Any]]:
@@ -117,13 +149,13 @@ User Query: "{query}"
         Send a batch of queries to the LLM and return a list of decomposed queries for each input query.
         """
         prompt = f"""
-You are an expert at analyzing document search queries. Your task is to decompose complex user queries into smaller, searchable parts, while keeping simple queries intact.
+        You are an expert system for query understanding and optimization. Your core function is to transform a user's natural language query into a set of optimized, self-contained search phrases. These phrases are intended to be used individually against a semantic or vector search engine to retrieve the most relevant information comprehensively.
 
-For each user query in the input JSON list, you must decide if it's simple or complex.
+        For each user query in the input JSON list, you must decide if it's simple or complex.
 
 **RULES:**
 
-1.  **Simple Queries:**+ If a query is a single, direct question (especially “coverage for …”, “limit for …”, “how much …”), it is SIMPLE. Do NOT decompose it. Return it as a single-item list in the JSON output.
+1.  **Simple Queries:**+ If a query is a single, direct question (especially "coverage for …", "limit for …", "how much …"), it is SIMPLE. Do NOT decompose it. Return it as a single-item list in the JSON output.
     *   *Examples of simple queries:* "How does the policy define a 'Hospital'?", "What is the waiting period for cataract surgery?"
     *   Example: "What is the extent of coverage for AYUSH treatments?" -> Extent of coverage for AYUSH treatments
 
@@ -150,11 +182,15 @@ For each user query in the input JSON list, you must decide if it's simple or co
 
 **Output (JSON):**
 """
-        try:
+        
+        def _make_batch_api_call():
             response = self.model.generate_content(prompt)
             response_text = response.text.strip()
 
-            print('response_textttt', response_text)
+            print(f"\n📥 DEBUG: Raw response from Gemini:")
+            print(f"{'='*50}")
+            print(response_text)
+            print(f"{'='*50}")
             
             # The model might return the JSON wrapped in markdown, so we extract it.
             if response_text.startswith("```json"):
@@ -177,11 +213,15 @@ For each user query in the input JSON list, you must decide if it's simple or co
                 else: # Fallback for unexpected types
                     result.append([queries[len(result)]])
 
+            return result
+
+        try:
+            result = self._retry_with_backoff(_make_batch_api_call)
             print(f"🧠 Batch decomposed {len(queries)} queries.")
             return result
             
         except Exception as e:
-            print(f"Error in batch query analysis: {e}. Falling back to original queries.")
+            print(f"Error in batch query analysis after all retries: {e}. Falling back to original queries.")
             return [[q] for q in queries]
     
     def process_multiple_queries(self, queries: List[str]) -> List[List[str]]:
