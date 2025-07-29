@@ -75,7 +75,7 @@ async def process_document_and_questions(
         print(f"   URL: {request.documents}")
         print(f"   Chunk size: 2500 characters")
         
-        success, document_name = document_manager.initialize_document_from_url(str(request.documents), 2500)
+        success, document_name = document_manager.initialize_document_from_url(str(request.documents), 1400)
         
         if not success:
             raise HTTPException(
