@@ -199,20 +199,9 @@ class DocumentProcessor:
             elif file_extension in ['docx', 'doc']:
                 from docx import Document
                 import io
-                try:
-                    doc_obj = Document(io.BytesIO(file_bytes))
-                    para_texts = [para.text for para in doc_obj.paragraphs]
-                    content = "\n\n".join(para_texts)
-                except Exception as e:
-                    print(f"❌ Error processing Word document: {e}")
-                    # Try alternative approach for .doc files
-                    if file_extension == 'doc':
-                        # For .doc files, we might need to use a different library
-                        # For now, let's try to decode as text if possible
-                        try:
-                            content = file_bytes.decode('utf-8', errors='ignore')
-                        except:
-                            raise ValueError(f"Unable to process .doc file format")
+                doc_obj = Document(io.BytesIO(file_bytes))
+                para_texts = [para.text for para in doc_obj.paragraphs]
+                content = "\n\n".join(para_texts)
             elif file_extension == 'eml':
                 msg = email.message_from_bytes(file_bytes)
                 if msg.is_multipart():
