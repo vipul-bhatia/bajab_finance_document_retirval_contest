@@ -7,7 +7,8 @@ Processes documents from URLs and answers questions using intelligent search
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, HttpUrl
 from typing import List
 import time
@@ -15,27 +16,43 @@ import traceback
 
 from src.document_manager import DocumentManager
 
+from dotenv import load_dotenv
+load_dotenv()
+
 app = FastAPI(
     title="Document Retrieval API",
     description="Process documents from URLs and answer questions using intelligent semantic search",
     version="1.0.0"
 )
 
+# Security scheme for Bearer token
+security = HTTPBearer()
+
+# Expected Bearer token
+EXPECTED_TOKEN = os.getenv("EXPECTED_TOKEN")
+
 # Pydantic models for request/response
 class DocumentQuery(BaseModel):
     documents: HttpUrl  # Single document URL
     questions: List[str]
-    chunk_size: int = 2500  # Optional: adjust chunk size for performance vs accuracy
 
 class AnswersResponse(BaseModel):
     answers: List[str]
-    processing_time: float
-    document_chunks: int
-    total_questions: int
-    timing_breakdown: dict = None  # Detailed timing for each step
 
-@app.post("/process-document", response_model=AnswersResponse)
-async def process_document_and_questions(request: DocumentQuery):
+async def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
+    if credentials.credentials != EXPECTED_TOKEN:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credentials.credentials
+
+@app.post("/api/v1/hackrx/run", response_model=AnswersResponse)
+async def process_document_and_questions(
+    request: DocumentQuery,
+    token: str = Depends(verify_token)
+):
     """
     Process a document from URL and answer multiple questions
     
@@ -43,10 +60,9 @@ async def process_document_and_questions(request: DocumentQuery):
         request: DocumentQuery containing document URL and list of questions
         
     Returns:
-        AnswersResponse with list of answers and metadata
+        AnswersResponse with list of answers
     """
     total_start_time = time.time()
-    timing_data = {}
     
     try:
         # Initialize document manager
@@ -57,9 +73,9 @@ async def process_document_and_questions(request: DocumentQuery):
         download_start = time.time()
         print(f"📥 Step 1: Downloading document from URL...")
         print(f"   URL: {request.documents}")
-        print(f"   Chunk size: {request.chunk_size} characters")
+        print(f"   Chunk size: 2500 characters")
         
-        success, document_name = document_manager.initialize_document_from_url(str(request.documents), request.chunk_size)
+        success, document_name = document_manager.initialize_document_from_url(str(request.documents), 2500)
         
         if not success:
             raise HTTPException(
@@ -68,11 +84,10 @@ async def process_document_and_questions(request: DocumentQuery):
             )
         
         download_time = time.time() - download_start
-        timing_data['document_download_and_processing'] = round(download_time, 2)
         
         # Get detailed timing from document manager
         if hasattr(document_manager, 'timing_data'):
-            timing_data.update(document_manager.timing_data)
+            timing_data = document_manager.timing_data
         
         print(f"✅ Document download & processing completed in {download_time:.2f}s")
         
@@ -85,10 +100,8 @@ async def process_document_and_questions(request: DocumentQuery):
         print(f"🎯 Step 2: Processing {len(request.questions)} questions...")
         answers = document_manager.process_multiple_queries(request.questions)
         query_time = time.time() - query_start
-        timing_data['query_processing'] = round(query_time, 2)
         
         total_time = time.time() - total_start_time
-        timing_data['total_processing_time'] = round(total_time, 2)
         
         print(f"🏁 All questions processed in {query_time:.2f}s")
         print(f"🏁 Total pipeline time: {total_time:.2f}s")
@@ -100,15 +113,10 @@ async def process_document_and_questions(request: DocumentQuery):
             print(f"   • Embedding Generation: {timing_data['embedding_generation']:.2f}s")
         print(f"   • Database Operations: {timing_data.get('database_load', 0):.2f}s")
         print(f"   • Search Engine Load: {timing_data.get('search_engine_load', 0):.2f}s")
-        print(f"   • Query Processing: {timing_data['query_processing']:.2f}s")
+        print(f"   • Query Processing: {query_time:.2f}s")
         print(f"   • Total Pipeline: {total_time:.2f}s")
         
-        return AnswersResponse(
-            answers=answers,
-            processing_time=round(total_time, 2),
-            document_chunks=doc_info['chunk_count'],
-            total_questions=len(request.questions)
-        )
+        return AnswersResponse(answers=answers)
         
     except HTTPException:
         raise
@@ -133,7 +141,7 @@ async def root():
         "version": "1.0.0",
         "description": "Process documents from URLs and answer questions using intelligent semantic search",
         "endpoints": {
-            "POST /process-document": "Main endpoint for document processing and question answering",
+            "POST /api/v1/hackrx/run": "Main endpoint for document processing and question answering",
             "GET /health": "Health check endpoint",
             "GET /docs": "Interactive API documentation"
         }
