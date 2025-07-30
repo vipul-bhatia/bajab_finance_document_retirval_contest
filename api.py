@@ -13,7 +13,6 @@ from pydantic import BaseModel, HttpUrl
 from typing import List
 import time
 import traceback
-import asyncio
 
 from src.document_manager import DocumentManager
 
@@ -48,7 +47,6 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Security(secu
             headers={"WWW-Authenticate": "Bearer"},
         )
     return credentials.credentials
-
 @app.post("/api/v1/hackrx/run", response_model=AnswersResponse)
 async def process_document_and_questions(
     request: DocumentQuery,
@@ -64,12 +62,6 @@ async def process_document_and_questions(
         AnswersResponse with list of answers
     """
     total_start_time = time.time()
-
-    # Add a delay to handle rate limiting
-    await asyncio.sleep(40)
-
-    print(f"Received document URL: {request.documents}")
-    print(f"Received questions: {request.questions}")
     
     try:
         # Initialize document manager
@@ -122,11 +114,31 @@ async def process_document_and_questions(
         print(f"   • Search Engine Load: {timing_data.get('search_engine_load', 0):.2f}s")
         print(f"   • Query Processing: {query_time:.2f}s")
         print(f"   • Total Pipeline: {total_time:.2f}s")
-
-        print(f"Answers: {answers}")
+        
+        # Log request details to file asynchronously
+        try:
+            from datetime import datetime
+            import aiofiles
+            
+            log_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "document_name": document_name,
+                "document_url": str(request.documents),
+                "questions": request.questions,
+                "answers": answers
+            }
+            
+            import json
+            log_file = "request_logs.jsonl"
+            
+            async with aiofiles.open(log_file, mode='a') as f:
+                await f.write(json.dumps(log_entry) + '\n')
+                
+        except Exception as log_error:
+            # Log error but don't fail the request
+            print(f"Warning: Failed to log request details: {log_error}")
         
         return AnswersResponse(answers=answers)
-        
     except HTTPException:
         raise
     except Exception as e:
