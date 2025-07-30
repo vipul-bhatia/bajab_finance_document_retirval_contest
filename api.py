@@ -69,6 +69,7 @@ async def process_document_and_questions(
     await asyncio.sleep(40)
 
     print(f"Received document URL: {request.documents}")
+    print(f"Received questions: {request.questions}")
     
     try:
         # Initialize document manager
@@ -121,6 +122,8 @@ async def process_document_and_questions(
         print(f"   • Search Engine Load: {timing_data.get('search_engine_load', 0):.2f}s")
         print(f"   • Query Processing: {query_time:.2f}s")
         print(f"   • Total Pipeline: {total_time:.2f}s")
+
+        print(f"Answers: {answers}")
         
         return AnswersResponse(answers=answers)
         
