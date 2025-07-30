@@ -13,6 +13,7 @@ from pydantic import BaseModel, HttpUrl
 from typing import List
 import time
 import traceback
+import asyncio
 
 from src.document_manager import DocumentManager
 
@@ -63,6 +64,9 @@ async def process_document_and_questions(
         AnswersResponse with list of answers
     """
     total_start_time = time.time()
+
+    # Add a delay to handle rate limiting
+    await asyncio.sleep(40)
 
     print(f"Received document URL: {request.documents}")
     
