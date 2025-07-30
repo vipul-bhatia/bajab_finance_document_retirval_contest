@@ -31,7 +31,7 @@ class QueryEnhancer:
 {results_text}
 
 **Instructions:**
-1. **Analyze & Synthesize:** Carefully analyze all provided information to craft a complete, accurate, and natural-sounding response that directly answers the query.
+1. **Analyze & Synthesize:** Carefully analyze all provided information to craft a *COMPLETE*, *ACCURATE*, and natural-sounding response that directly answers the query.
 
 2. **Natural, Direct Tone:** Provide answers in a clear, conversational tone as if explaining to a colleague. Avoid mechanical phrases like "the text states" or "according to the document." Simply present the information naturally.
 
@@ -46,6 +46,8 @@ class QueryEnhancer:
    - Maintains complete accuracy to the source material
    - Sounds natural and conversational
    - Includes all relevant details while remaining clear and focused
+
+5. **Length of the answer:** The answer must be concise. It should be of approx 2 sentences ensuring *completeness* and factual accuracy without unnecessary elaboration.
 
 Example Query: "What is the grace period for premium payment?"
 
