@@ -11,6 +11,7 @@ class DocumentManager:
     
     def __init__(self):
         self.search_engine = SearchEngine()
+        self.document_processor = DocumentProcessor()  # Instantiate the processor
         self.current_document = None
     
     def initialize_document_from_url(self, document_url: str, chunk_size: int = None):
@@ -25,11 +26,9 @@ class DocumentManager:
         
         download_start = time.time()
         print(f"   📥 Downloading document...")
-        if chunk_size:
-            chunks = DocumentProcessor.download_and_process_document_with_size(document_url, chunk_size)
-        else:
-            chunks = DocumentProcessor.download_and_process_document(document_url)
-        
+        # Use the instance to call the method
+        chunks = self.document_processor.download_and_process_document(document_url, chunk_size) if chunk_size else self.document_processor.download_and_process_document(document_url)
+
         if not chunks:
             print("Failed to download or process document from URL.")
             return False, document_name
@@ -85,7 +84,7 @@ class DocumentManager:
             document_name = os.path.splitext(os.path.basename(document_path))[0]
             document_name = ''.join(c for c in document_name if c.isalnum() or c == '_')
         
-        chunks = DocumentProcessor.load_document(document_path)
+        chunks = self.document_processor.load_document(document_path)
         if not chunks:
             print("No document chunks found. Please provide a valid document.")
             return False, document_name

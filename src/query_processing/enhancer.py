@@ -23,7 +23,7 @@ class QueryEnhancer:
                 results_text += f"[Found via sub-query: '{result['source_query']}']\n"
             results_text += "\n"
 
-        prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer a user's query with complete accuracy, based *strictly* on the provided text chunks.
+        prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer a user's query with complete accuracy, based strictly on the provided text chunks.
 
 **User Query:** "{query}"
 
@@ -31,30 +31,31 @@ class QueryEnhancer:
 {results_text}
 
 **Instructions:**
-1.  **Analyze Thoroughly:** Carefully read all the provided text chunks to find the most relevant information(that completely answers the query) to answer the query.
-2.  **Synthesize a Clear, User-Friendly Answer:** Aim for the conciseness of 1-2 sentences, but always prioritize providing a complete and accurate response over meeting a specific sentence count.
-3.  **Direct, User-Friendly Tone:** Adopt a helpful, expert, human-like tone. **Crucially, do NOT use phrases like 'The provided text states,' 'According to the document,' or 'Based on the information.'** Just state the answer directly as a fact from the policy.
-4.  **Be Factual, Precise and Absolute Fidelity to the Source:** Base your answer strictly on the details found in the `Retrieved Information`. Do not infer or add information not present in the text. If the context is insufficient, state that the answer cannot be found in the provided information.
-5.  **Synthesize for Completeness:** Carefully analyze all provided text chunks. If multiple chunks contribute to the answer, you must synthesize them into a single, coherent, and comprehensive response. Ensure every part of the user's query is addressed. You *MUST NOT* omit any relevant details to make it shorter. Accuracy is more important than conciseness.
-6.  **Final Verification:** Perform a check by comparing your drafted answer against the original user query. You must verify that every single component, question, and condition mentioned in the query has been fully and explicitly addressed.
+1. **Analyze & Synthesize:** Carefully analyze all provided information to craft a complete, accurate, and natural-sounding response that directly answers the query.
 
---- EXAMPLES ---
+2. **Natural, Direct Tone:** Provide answers in a clear, conversational tone as if explaining to a colleague. Avoid mechanical phrases like "the text states" or "according to the document." Simply present the information naturally.
 
-Chunk 1: "Grace Period means a period of thirty days after the Premium due date, for payment of the Premium."
-Chunk 2: "During the grace period the policy shall be in force. Renewing within this period ensures you retain your continuity benefits, such as the waiting periods you have already served."
+3. **Accuracy & Completeness:** 
+   - Base your answer strictly on the provided information
+   - Synthesize multiple relevant pieces into a coherent response
+   - Do not add information or make assumptions beyond what's given
+   - If you cannot find a complete answer, acknowledge this clearly
 
-**Good Answer (Accurate, Complete, Direct):**
-"You have a grace period of thirty days after the premium due date to make your payment. Your policy remains active during this time, and paying within this period ensures you do not lose any continuity benefits."
+4. **Verification:** Before responding, verify that your answer:
+   - Addresses all aspects of the query
+   - Maintains complete accuracy to the source material
+   - Sounds natural and conversational
+   - Includes all relevant details while remaining clear and focused
 
-**Bad Answer (References the document):**
-"According to the text, a grace period of thirty days is mentioned for premium payment."
+Example Query: "What is the grace period for premium payment?"
 
-**Bad Answer (Incomplete):**
-"The grace period is thirty days." (This misses the crucial context about the policy remaining active and the continuity benefits.)
+✅ Good Answer:
+"You have 30 days after your premium due date to make the payment. During this grace period, your policy stays active and paying within this time ensures you keep your continuity benefits."
 
---- YOUR TASK ---
+❌ Poor Answer:
+"According to chunk 1, there is a grace period of 30 days mentioned for premium payments."
 
-**Your Answer:**"""
+Your response:"""
 
         try:
             response = self.model.generate_content(prompt)
