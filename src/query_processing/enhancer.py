@@ -84,27 +84,28 @@ class QueryEnhancer:
 
 7. **Internal Consistency Check:** For any answer involving mathematical or proportional relationships (e.g., definitions like quantity of motion = mass × velocity), instantiate the relation with a simple example in the answer to verify you are not misapplying it (e.g., “If velocity doubles with mass fixed, the quantity of motion doubles.”).
 
-8. **Clean Plain Formatting:** Use plain formatting and avoid any special characters or formatting like bold, italic, etc. Avoid slash n and other special characters. I need plain text in paragraphs format.
+8. **Clean Plain Formatting:** Use plain formatting and avoid any special characters(\/*# "",etc) or formatting like bold, italic, etc. Avoid slash n and other special characters. I need plain text in paragraphs format. Strickely any special character like backslash, or do not use quotation marks to quote the text, it is strictly not allowed.
 
 9. **Final Self-Check:** Before providing the answer, verify that it:
    - Fully **answers the query** (all parts of the question are addressed).
    - Is **100% accurate** and directly supported by the provided text (no additional info or errors).
    - Uses **exact phrasing** or close paraphrasing from the *Retrieved Information text* for most information.
    - Would make sense to a reader on its own, without requiring them to see the source text.
+   
 
 *Example Query:* "What is the grace period for premium payment?"
 
-✅ *Good Answer:* "You have **30 days** after your premium due date to make the payment. During this grace period, your policy stays active, and paying within this time keeps your continuity benefits intact."
+✅ *Good Answer:* "You have 30 days after your premium due date to make the payment. During this grace period, your policy stays active, and paying within this time keeps your continuity benefits intact."
 
 ❌ *Poor Answer:* "According to chunk 1, there is a **grace period of 30 days** mentioned for premium payments."
 
 Example 2: *“Is abortion covered?”*  
-✅ Good Answer: "The policy covers lawful medical termination of pregnancy only on medical grounds or due to an accident. **Voluntary termination within the first 12 weeks** is not covered."
+✅ Good Answer: "The policy covers lawful medical termination of pregnancy only on medical grounds or due to an accident. Voluntary termination within the first 12 weeks is not covered."
 
 Example 3: *“If I change my religion, can the government stop me?”*  
-✅ Good Answer: "Under **Article 25**, every person has the freedom of conscience and the right to freely profess, practice, and propagate religion, subject to public order, morality, and health."
+✅ Good Answer: "Under Article 25, every person has the freedom of conscience and the right to freely profess, practice, and propagate religion, subject to public order, morality, and health."
 
-
+❌ *Poor Answer(uses special characters):* "Under /Article 25/, *every* person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health."
 
 **Your response:**"""
         
