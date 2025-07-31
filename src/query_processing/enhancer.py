@@ -8,7 +8,7 @@ class QueryEnhancer:
     def __init__(self):
         # Initialize OpenAI client - API key should be set in environment variables
         self.client = openai.OpenAI()
-        self.model = "gpt-4o"
+        self.model = "gpt-4.1-mini-2025-04-14"
     
     def get_most_relevant_chunk(self, query: str, search_results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """
@@ -74,7 +74,7 @@ class QueryEnhancer:
 
 2. **Strictly Source-Based:** Base your answer **exclusively** on the given text. **Do not** use outside knowledge or make assumptions. If the query cannot be fully answered with the provided material, clearly state that the information is not available in the text.
 
-3. **Direct Grounding & Precision:** Wherever possible, use the exact wording or terminology from the source (especially for legal provisions, definitions, or key facts). Quoting or closely paraphrasing critical phrases (e.g., *"No child below the age of fourteen shall be employed in any factory..."*) will ensure your answer is precisely grounded in the text. Avoid vague rephrasings when a specific phrase is provided in the source.
+3. **Direct Grounding & Precision:** Use exact wording or terminology verbatim for definitions, laws, or named principles (put those in quotation marks). When paraphrasing, preserve quantitative relationships precisely. Avoid vague rephrasings when a specific phrase is provided in the source.
 
 4. **Complete & Specific Answer:** Aim for completeness. Address every part of the query. Include all relevant details, conditions, and exceptions mentioned in the text. Be specific — for example, reference exact article numbers, sections, or terms as given, rather than generalizing (e.g., cite **Article 21** directly if it’s relevant).
 
@@ -82,7 +82,9 @@ class QueryEnhancer:
 
 6. **Concise Presentation:** Keep your answer concise and focused. Aim for about **two sentences** in total. These sentences should fully answer the question while omitting any unnecessary fluff or repetition.
 
-7. **Final Self-Check:** Before providing the answer, verify that it:
+7. **Internal Consistency Check:** For any answer involving mathematical or proportional relationships (e.g., definitions like quantity of motion = mass × velocity), instantiate the relation with a simple example in the answer to verify you are not misapplying it (e.g., “If velocity doubles with mass fixed, the quantity of motion doubles.”).
+
+8. **Final Self-Check:** Before providing the answer, verify that it:
    - Fully **answers the query** (all parts of the question are addressed).
    - Is **100% accurate** and directly supported by the provided text (no additional info or errors).
    - Uses **exact phrasing** or close paraphrasing from the *Retrieved Information text* for most information.
