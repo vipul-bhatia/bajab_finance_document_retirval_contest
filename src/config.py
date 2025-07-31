@@ -1,17 +1,20 @@
 import os
 import torch
 from dotenv import load_dotenv
-import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
 
 # ─── API Configuration ───────────────────────────────────────────────────────────
-api_key = os.getenv("GOOGLE_API_KEY")
-if not api_key:
-    raise ValueError("GOOGLE_API_KEY must be set in your .env file. Get one from https://aistudio.google.com/app/apikey")
+# OpenAI API Key for GPT-4o
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    raise ValueError("OPENAI_API_KEY must be set in your .env file. Get one from https://platform.openai.com/api-keys")
 
-genai.configure(api_key=api_key)
+# Google API Key (kept for potential future use with embeddings)
+google_api_key = os.getenv("GOOGLE_API_KEY")
+if not google_api_key:
+    raise ValueError("GOOGLE_API_KEY must be set in your .env file. Get one from https://aistudio.google.com/app/apikey")
 
 # ─── Device Selection ────────────────────────────────────────────────────────────
 if torch.backends.mps.is_available() and torch.backends.mps.is_built():
@@ -22,11 +25,9 @@ else:
     device = torch.device("cpu")
 
 # ─── Model Configuration ─────────────────────────────────────────────────────────
-# DIM = 1536  # Gemini embedding model dimension
-# MODEL = "gemini-embedding-001"
-DIM = 3072  # Gemini embedding model dimension
+DIM = 3072  # OpenAI embedding model dimension
 MODEL = "text-embedding-3-large"
-TOP_K = 5  # Return top 3 results
+TOP_K = 5  # Return top 5 results
 
 # ─── Document Processing Configuration ───────────────────────────────────────────
 CHUNK_SIZE = 1400  # Characters per chunk (2500 = ~2 chunks per page)
