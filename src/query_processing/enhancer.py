@@ -107,15 +107,18 @@ Example 3: *“If I change my religion, can the government stop me?”*
 
 
 **Your response:**"""
-        print("--------------------------------")
-        print("--------------------------------")
-        print(f"query: {query}")
-        print("--------------------------------")
-        print("--------------------------------")
-        print(len(results_text))
-        print(f"chuncks input: {results_text}")
-        print("--------------------------------")
-        print("--------------------------------")
+        
+
+
+        # print("--------------------------------")
+        # print("--------------------------------")
+        # print(f"query: {query}")
+        # print("--------------------------------")
+        # print("--------------------------------")
+        # print(len(results_text))
+        # print(f"chuncks input: {results_text}")
+        # print("--------------------------------")
+        # print("--------------------------------")
 
 
 
