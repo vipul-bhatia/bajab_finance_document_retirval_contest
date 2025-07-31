@@ -84,7 +84,9 @@ class QueryEnhancer:
 
 7. **Internal Consistency Check:** For any answer involving mathematical or proportional relationships (e.g., definitions like quantity of motion = mass × velocity), instantiate the relation with a simple example in the answer to verify you are not misapplying it (e.g., “If velocity doubles with mass fixed, the quantity of motion doubles.”).
 
-8. **Final Self-Check:** Before providing the answer, verify that it:
+8. **Clean Plain Formatting:** Use plain formatting and avoid any special characters or formatting like bold, italic, etc. Avoid slash n and other special characters. I need plain text in paragraphs format.
+
+9. **Final Self-Check:** Before providing the answer, verify that it:
    - Fully **answers the query** (all parts of the question are addressed).
    - Is **100% accurate** and directly supported by the provided text (no additional info or errors).
    - Uses **exact phrasing** or close paraphrasing from the *Retrieved Information text* for most information.
