@@ -44,5 +44,3 @@ Thumbs.db
 
 # Logs
 *.log 
-
-*.faiss
