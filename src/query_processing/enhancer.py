@@ -23,7 +23,46 @@ class QueryEnhancer:
                 results_text += f"[Found via sub-query: '{result['source_query']}']\n"
             results_text += "\n"
 
-        prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer a user's query with complete accuracy, based strictly on the provided text chunks.
+#         prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer a user's query with complete accuracy, based strictly on the provided text chunks.
+
+# **User Query:** "{query}"
+
+# **Retrieved Information:**
+# {results_text}
+
+# **Instructions:**
+# 1. **Analyze & Synthesize:** Carefully analyze all provided information to craft a *COMPLETE*, *ACCURATE*, and natural-sounding response that directly answers the query.
+
+# 2. **Natural, Direct Tone:** Provide answers in a clear, conversational tone as if explaining to a colleague. Avoid mechanical phrases like "the text states" or "according to the document." Simply present the information naturally.
+
+# 3. **Accuracy & Completeness:** 
+#    - Base your answer strictly on the provided information
+#    - Synthesize multiple relevant pieces into a coherent response
+#    - Do not add information or make assumptions beyond what's given
+#    - If you cannot find a complete answer, acknowledge this clearly
+
+# 4. **Verification:** Before responding, verify that your answer:
+#    - Addresses all aspects of the query
+#    - Maintains complete accuracy to the source material
+#    - Sounds natural and conversational
+#    - Includes all relevant details while remaining clear and focused
+
+# 5. **Length of the answer:** The answer must be concise. It should be of approx 2 sentences ensuring *completeness* and factual accuracy without unnecessary elaboration.
+
+# Example Query: "What is the grace period for premium payment?"
+
+# ✅ Good Answer:
+# "You have 30 days after your premium due date to make the payment. During this grace period, your policy stays active and paying within this time ensures you keep your continuity benefits."
+
+# ❌ Poor Answer:
+# "According to chunk 1, there is a grace period of 30 days mentioned for premium payments."
+
+# Your response:"""
+
+
+
+        
+        prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer the user's query with **complete accuracy**, using **only** the provided text chunks as your source of information.
 
 **User Query:** "{query}"
 
@@ -31,33 +70,40 @@ class QueryEnhancer:
 {results_text}
 
 **Instructions:**
-1. **Analyze & Synthesize:** Carefully analyze all provided information to craft a *COMPLETE*, *ACCURATE*, and natural-sounding response that directly answers the query.
 
-2. **Natural, Direct Tone:** Provide answers in a clear, conversational tone as if explaining to a colleague. Avoid mechanical phrases like "the text states" or "according to the document." Simply present the information naturally.
+1. **Analyze Thoroughly & Synthesize:** Carefully review all the provided information. Identify every detail relevant to the query and combine these pieces into a single, coherent answer.
 
-3. **Accuracy & Completeness:** 
-   - Base your answer strictly on the provided information
-   - Synthesize multiple relevant pieces into a coherent response
-   - Do not add information or make assumptions beyond what's given
-   - If you cannot find a complete answer, acknowledge this clearly
+2. **Strictly Source-Based:** Base your answer **exclusively** on the given text. **Do not** use outside knowledge or make assumptions. If the query cannot be fully answered with the provided material, clearly state that the information is not available in the text.
 
-4. **Verification:** Before responding, verify that your answer:
-   - Addresses all aspects of the query
-   - Maintains complete accuracy to the source material
-   - Sounds natural and conversational
-   - Includes all relevant details while remaining clear and focused
+3. **Direct Grounding & Precision:** Wherever possible, use the exact wording or terminology from the source (especially for legal provisions, definitions, or key facts). Quoting or closely paraphrasing critical phrases (e.g., *"No child below the age of fourteen shall be employed in any factory..."*) will ensure your answer is precisely grounded in the text. Avoid vague rephrasings when a specific phrase is provided in the source.
 
-5. **Length of the answer:** The answer must be concise. It should be of approx 2 sentences ensuring *completeness* and factual accuracy without unnecessary elaboration.
+4. **Complete & Specific Answer:** Aim for completeness. Address every part of the query. Include all relevant details, conditions, and exceptions mentioned in the text. Be specific — for example, reference exact article numbers, sections, or terms as given, rather than generalizing (e.g., cite **Article 21** directly if it’s relevant).
 
-Example Query: "What is the grace period for premium payment?"
+5. **Clear and Formal Tone:** Write the answer in a clear, straightforward manner, as if explaining to a colleague. Maintain the tone of the source material (for instance, use formal legal language if appropriate). **Do not** mention any "chunks," file names, or the retrieval process. Simply present the facts authoritatively, without phrases like "the document says."
 
-✅ Good Answer:
-"You have 30 days after your premium due date to make the payment. During this grace period, your policy stays active and paying within this time ensures you keep your continuity benefits."
+6. **Concise Presentation:** Keep your answer concise and focused. Aim for about **two sentences** in total. These sentences should fully answer the question while omitting any unnecessary fluff or repetition.
 
-❌ Poor Answer:
-"According to chunk 1, there is a grace period of 30 days mentioned for premium payments."
+7. **Final Self-Check:** Before providing the answer, verify that it:
+   - Fully **answers the query** (all parts of the question are addressed).
+   - Is **100% accurate** and directly supported by the provided text (no additional info or errors).
+   - Uses **exact phrasing** or close paraphrasing from the *Retrieved Information text* for most information.
+   - Would make sense to a reader on its own, without requiring them to see the source text.
 
-Your response:"""
+*Example Query:* "What is the grace period for premium payment?"
+
+✅ *Good Answer:* "You have **30 days** after your premium due date to make the payment. During this grace period, your policy stays active, and paying within this time keeps your continuity benefits intact."
+
+❌ *Poor Answer:* "According to chunk 1, there is a **grace period of 30 days** mentioned for premium payments."
+
+Example 2: *“Is abortion covered?”*  
+✅ Good Answer: "The policy covers lawful medical termination of pregnancy only on medical grounds or due to an accident. **Voluntary termination within the first 12 weeks** is not covered."
+
+Example 3: *“If I change my religion, can the government stop me?”*  
+✅ Good Answer: "Under **Article 25**, every person has the freedom of conscience and the right to freely profess, practice, and propagate religion, subject to public order, morality, and health."
+
+
+
+**Your response:**"""
         try:
             response = self.model.generate_content(prompt)
             answer_text = response.text.strip()
