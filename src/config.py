@@ -30,7 +30,7 @@ MODEL = "text-embedding-3-large"
 TOP_K = 6 # Return top 5 results
 
 # ─── Document Processing Configuration ───────────────────────────────────────────
-CHUNK_SIZE = 1000  # Characters per chunk (2500 = ~2 chunks per page)
+CHUNK_SIZE = 1400  # Characters per chunk (2500 = ~2 chunks per page)
 CHUNK_OVERLAP = 100  # Overlap between chunks
 
 # ─── Download Optimization Configuration ─────────────────────────────────────────

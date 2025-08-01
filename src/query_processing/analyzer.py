@@ -14,7 +14,7 @@ class QueryAnalyzer:
         # Initialize OpenAI client - API key should be set in environment variables
         # self.client = openai.OpenAI()
         # self.model = "gpt-4.1-mini-2025-04-14"
-        self.model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        self.model = genai.GenerativeModel('gemini-2.5-pro')
     
     def _retry_with_backoff(self, func, max_retries=2, backoff_factor=1):
         """
@@ -163,47 +163,53 @@ User Query: "{query}"
         Send a batch of queries to the LLM and return a list of decomposed queries for each input query.
         """
         prompt = f"""
-        You are an expert system for query understanding and optimization. Your core function is to transform a user's natural language query into a set of optimized, self-contained search phrases. These phrases are intended to be used individually against a semantic or vector search engine to retrieve the most relevant information comprehensively.
+      You are an expert system for query understanding and optimization. Your core function is to transform a user's natural language query into a set of optimized, self-contained search phrases. These phrases are intended to be used individually against a semantic or vector search engine to retrieve the most relevant information comprehensively.
 
-        For each user query in the input JSON list, you must decide if it's simple or complex.
+For each user query in the input JSON list, you must decide if it's simple or complex.
 
-**RULES:**
+RULES:
+Simple Queries: If a query is a single, direct question (especially "coverage for …", "limit for …", "how much …"), it is SIMPLE. Do NOT decompose it. Return it as a single-item list in the JSON output.
 
-1.  **Simple Queries:**+ If a query is a single, direct question (especially "coverage for …", "limit for …", "how much …"), it is SIMPLE. Do NOT decompose it. Return it as a single-item list in the JSON output.
-    *   *Examples of simple queries:* "How does the policy define a 'Hospital'?", "What is the waiting period for cataract surgery?"
-    *   Example: "What is the extent of coverage for AYUSH treatments?" -> Extent of coverage for AYUSH treatments
+Examples: "How does the policy define a 'Hospital'?", "What is the waiting period for cataract surgery?"
 
-2.  **Complex Queries:** If a query combines multiple distinct concepts, conditions, or demographic data, it is COMPLEX. **Decompose it into meaningful, focused, searchable parts.**
-    *   *Decomposition Strategy:* Break it down into components that can be searched for independently.
-    *   *Example 1:* "What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?"
-        *   *Decomposition:* `[
-  "Grace Period definition in National Parivar Mediclaim Plus Policy",
-  "Length of Grace Period for premium payment",
-  "Policy renewal conditions after premium due date"
-]`
-    *   *Example 2:* "46M, knee surgery, Pune, 3-month policy"
-        *   *Decomposition:* `["46 year old male patient eligibility", "knee surgery coverage insurance", "Pune medical providers network", "3 month waiting period policy"]`
-    *   *Example 3:* "Is there a benefit for preventive health check-ups?"
-        *   *Decomposition:* `["preventive health check-ups", "benefit for preventive health check-ups", "health check-ups"]`
+Complex Queries: If a query combines multiple distinct concepts or conditions, it is COMPLEX. Decompose it into meaningful, focused, searchable parts.
 
+Example: "What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?"
 
-**OPTIMIZATION PRINCIPLES:**
+Decomposition: ["Grace Period definition in National Parivar Mediclaim Plus Policy", "Length of Grace Period for premium payment", "Policy renewal conditions after premium due date"]
 
-1. **Preserve Intent**: Maintain the user's original question intent
-2. **Enhance Searchability**: Use terms likely to appear in relevant documents
-3. **Avoid Over-decomposition**: Don't break simple concepts unnecessarily
-4. **Context Preservation**: Keep related terms together when meaningful
-5. **Semantic Clarity**: Each component should be semantically complete
+Scenario-Based or Narrative Queries: If a query is a story or scenario, first identify the user's core question, then decompose it into conceptual search phrases. Ignore irrelevant details.
 
-**Input Format:** A JSON list of strings, where each string is a user query.
+Example of a Narrative Query: "I have a claim for Rs 200,000 with HDFC, and it's approved. My total expenses are Rs 250,000. Can I raise the remaining Rs 50,000 with this policy?"
 
-**Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts (or the original query if it was simple).
+Correct Decomposition: ["Claiming from multiple insurance policies for a single hospitalization", "Process for claiming the balance amount from a second insurer", "How to submit a claim after receiving partial payment from another insurer", "Contribution clause in health insurance"]
 
----
-**Input:**
+Reasoning: The breakdown focuses on the core concepts ('multiple policies', 'balance amount') and ignores the specific, irrelevant details ('HDFC', 'Rs 200,000').
+
+OPTIMIZATION PRINCIPLES:
+Preserve Intent: Maintain the user's original question intent.
+
+Enhance Searchability with Expert Terminology: Use terms and phrases likely to appear in formal documents. Translate conversational language into industry-standard concepts (e.g., "claiming from two policies" can be broken down into "contribution clause" or "multiple insurance policies").
+
+Focus on the Core Task: Your goal is to find information in a specific policy document. You MUST ignore extraneous details that are not relevant to the policy's terms, such as:
+
+Names of other companies (e.g., HDFC, Max Bupa, etc.).
+
+Specific monetary amounts, unless they are a potential policy limit.
+
+Personal anecdotes or information not directly related to a policy feature.
+
+Avoid Over-decomposition: Don't break simple concepts unnecessarily.
+
+Semantic Clarity: Each component should be semantically complete and searchable on its own.
+
+Input Format: A JSON list of strings, where each string is a user query.
+Output Format: You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts (or the original query if it was simple).
+
+Input:
 {json.dumps(queries, ensure_ascii=False)}
 
-**Output (JSON):**
+Output (JSON):
 """
         
         def _make_batch_api_call():

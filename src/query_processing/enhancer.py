@@ -76,21 +76,21 @@ class QueryEnhancer:
 
 3. **Direct Grounding & Precision:** Use exact wording or terminology verbatim for definitions, laws, or named principles (put those in quotation marks). When paraphrasing, preserve quantitative relationships precisely. Avoid vague rephrasings when a specific phrase is provided in the source.
 
-4. **Complete & Specific Answer:** Aim for completeness. Address every part of the query. Include all relevant details, conditions, and exceptions mentioned in the text. Be specific — for example, reference exact article numbers, sections, or terms as given, rather than generalizing (e.g., cite **Article 21** directly if it’s relevant).
+4. **Complete & Specific Answer:** Aim for completeness. Address every part of the query. Include all relevant details, conditions, and exceptions mentioned in the text. Be specific — for example, reference exact article numbers, sections, or terms as given.
 
-5. **Clear and Formal Tone:** Write the answer in a clear, straightforward manner, as if explaining to a colleague. Maintain the tone of the source material (for instance, use formal legal language if appropriate). **Do not** mention any "chunks," file names, or the retrieval process. Simply present the facts authoritatively, without phrases like "the document says."
+5. **Clear and Formal Tone:** Write the answer in a clear, straightforward manner, as if explaining to a colleague. Maintain the tone of the source material. **Do not** mention any "chunks," file names, or the retrieval process.
 
-6. **Concise Presentation:** Keep your answer concise and focused. Aim for about **two sentences** in total. These sentences should fully answer the question while omitting any unnecessary fluff or repetition.
+6. **Concise Presentation:** Keep your answer concise and focused. Aim for about **three - four sentences**, but if you find that you need more than that to fully answer the question, then you can add more sentences. These sentences should fully answer the question while omitting any unnecessary fluff or repetition.
 
-7. **Internal Consistency Check:** For any answer involving mathematical or proportional relationships (e.g., definitions like quantity of motion = mass × velocity), instantiate the relation with a simple example in the answer to verify you are not misapplying it (e.g., “If velocity doubles with mass fixed, the quantity of motion doubles.”).
+7. **Internal Consistency Check:** For any answer involving mathematical or proportional relationships, instantiate the relation with a simple example in the answer to verify you are not misapplying it.
 
-8. **Clean Plain Formatting:** Use plain formatting and avoid any special characters(\/*# "",etc) or formatting like bold, italic, etc. Avoid slash n and other special characters. I need plain text in paragraphs format. Strickely any special character like backslash, or do not use quotation marks to quote the text, it is strictly not allowed.
+8. **Formatting:** Use plain text formatting. You may use numeric symbols (e.g., “2%”) and quotation marks when directly quoting source material.
 
 9. **Final Self-Check:** Before providing the answer, verify that it:
-   - Fully **answers the query** (all parts of the question are addressed).
-   - Is **100% accurate** and directly supported by the provided text (no additional info or errors).
-   - Uses **exact phrasing** or close paraphrasing from the *Retrieved Information text* for most information.
-   - Would make sense to a reader on its own, without requiring them to see the source text.
+   - Fully **answers the query** (all parts are addressed).
+   - Is **100% accurate** and directly supported by the provided text.
+   - Uses **exact phrasing** or close paraphrasing from the Retrieved Information text.
+   - Reads smoothly on its own, without needing the source chunks.
    
 
 *Example Query:* "What is the grace period for premium payment?"
