@@ -107,7 +107,8 @@ Example 3: *“If I change my religion, can the government stop me?”*
 
 ❌ *Poor Answer(uses special characters):* "Under /Article 25/, *every* person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health."
 
-**Your response:**"""
+**Your response:**
+"""
         
 
 
