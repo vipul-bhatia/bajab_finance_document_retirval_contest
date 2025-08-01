@@ -25,8 +25,6 @@ class QueryEnhancer:
                 results_text += f"[Found via sub-query: '{result['source_query']}']\n"
             results_text += "\n"
 
-        print(f"results_text: {results_text}")
-
 #         prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer a user's query with complete accuracy, based strictly on the provided text chunks.
 
 # **User Query:** "{query}"
