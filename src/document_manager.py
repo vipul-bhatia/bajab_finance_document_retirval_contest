@@ -63,7 +63,7 @@ class DocumentManager:
             print(f"   ✅ FAISS index load: {db_load_time:.2f}s")
         
         search_load_start = time.time()
-        self.search_engine.load_embeddings(faiss_index, chunks, document_name)
+        self.search_engine.load_search_indices(faiss_index, chunks, document_name)
         self.current_document = document_name
         search_load_time = time.time() - search_load_start
         timing_data['search_engine_load'] = round(search_load_time, 2)
@@ -100,7 +100,7 @@ class DocumentManager:
             DatabaseManager.store_embeddings(chunks, document_name)
             faiss_index = DatabaseManager.load_faiss_index(document_name)
         
-        self.search_engine.load_embeddings(faiss_index, chunks, document_name)
+        self.search_engine.load_search_indices(faiss_index, chunks, document_name)
         self.current_document = document_name
         
         return True, document_name

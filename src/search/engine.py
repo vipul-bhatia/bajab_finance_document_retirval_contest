@@ -6,6 +6,7 @@ from ..embeddings import EmbeddingGenerator
 from ..query_processing import QueryAnalyzer, QueryEnhancer
 from typing import List
 import concurrent.futures
+from rank_bm25 import BM25Okapi
 
 
 class SearchEngine:
@@ -13,16 +14,21 @@ class SearchEngine:
     
     def __init__(self):
         self.faiss_index = None
+        self.bm25_index = None
         self.document_chunks = []
         self.document_name = None
         self.query_analyzer = QueryAnalyzer()
         self.query_enhancer = QueryEnhancer()
     
-    def load_embeddings(self, faiss_index, chunks: list, document_name: str):
-        """Load FAISS index and chunks for search"""
+    def load_search_indices(self, faiss_index, chunks: list, document_name: str):
+        """Load FAISS index and create BM25 index."""
         self.faiss_index = faiss_index
         self.document_chunks = chunks
         self.document_name = document_name
+        
+        # Create BM25 index
+        tokenized_corpus = [doc.split(" ") for doc in self.document_chunks]
+        self.bm25_index = BM25Okapi(tokenized_corpus)
     
     def find_relevant_chunks(self, query: str, top_k: int = TOP_K):
         """Find relevant document chunks using FAISS"""
@@ -42,34 +48,75 @@ class SearchEngine:
             })
         
         return results
-    
+        
+    def _bm25_search(self, query: str, top_k: int = TOP_K):
+        """Find relevant document chunks using BM25"""
+        if self.bm25_index is None or not self.document_chunks:
+            raise RuntimeError("BM25 index not initialized. Load index first.")
+            
+        tokenized_query = query.split(" ")
+        doc_scores = self.bm25_index.get_scores(tokenized_query)
+        
+        top_n = sorted(range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True)[:top_k]
+        
+        results = []
+        for i in top_n:
+            results.append({
+                "chunk_index": i,
+                "text": self.document_chunks[i],
+                "score": doc_scores[i]
+            })
+            
+        return results
+
     def intelligent_search(self, query: str, return_all_results: bool = True):
         """
-        Enhanced search using Gemini for query analysis and parallel search
+        Enhanced search using hybrid vector and keyword search.
         
         Args:
-            query: User query (can be complex like "46M, knee surgery, Pune, 3-month policy")
+            query: User query
             return_all_results: If True, returns all unique results from parallel search
             
         Returns:
-            All unique results from parallel search (no additional LLM filtering)
+            All unique results from the hybrid search.
         """
         import time
         
         print(f"🔍 Starting intelligent search for: '{query}'")
         
-        # Step 1: Decompose query using Gemini
-        decompose_start = time.time()
-        search_queries = self.query_analyzer.analyze_and_decompose_query(query)
-        decompose_time = time.time() - decompose_start
-        
-        # Step 2: Execute parallel searches and return ALL unique results
+        # Step 1: Execute parallel searches (Vector + BM25)
         parallel_start = time.time()
-        all_results = self.query_analyzer.parallel_search(self, search_queries, top_k_per_query=TOP_K)
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            vector_future = executor.submit(self.find_relevant_chunks, query, top_k=TOP_K)
+            bm25_future = executor.submit(self._bm25_search, query, top_k=TOP_K)
+            
+            vector_results = vector_future.result()
+            bm25_results = bm25_future.result()
+
+        # Step 2: Combine and re-rank results using Reciprocal Rank Fusion (RRF)
+        combined_results = {}
+        # RRF scoring constant
+        k = 60
+        for result in vector_results:
+            if result["chunk_index"] not in combined_results:
+                combined_results[result["chunk_index"]] = {"text": result["text"], "score": 0}
+            combined_results[result["chunk_index"]]["score"] += 1 / (k + result["score"])
+
+        for result in bm25_results:
+            if result["chunk_index"] not in combined_results:
+                combined_results[result["chunk_index"]] = {"text": result["text"], "score": 0}
+            combined_results[result["chunk_index"]]["score"] += 1 / (k + result["score"])
+            
+        # Sort by RRF score
+        sorted_results = sorted(combined_results.items(), key=lambda item: item[1]["score"], reverse=True)
+        
+        all_results = [{"chunk_index": r[0], "text": r[1]["text"], "score": r[1]["score"]} for r in sorted_results]
+        
         parallel_time = time.time() - parallel_start
         
-        print(f"📊 Returning all {len(all_results)} unique results from parallel search")
-        print(f"⏱️  Search Timing: Decomposition {decompose_time:.2f}s + Parallel Search {parallel_time:.2f}s = {decompose_time + parallel_time:.2f}s total")
+        print(f"📊 Returning all {len(all_results)} unique results from hybrid search")
+        print(f"⏱️  Search Timing: {parallel_time:.2f}s total")
         
         return all_results
     
@@ -138,64 +185,48 @@ class SearchEngine:
         
         print(f"🎯 Processing {len(questions)} queries in parallel...")
         
-        # Step 1: Analyze which queries need decomposition
-        analysis_start = time.time()
-        query_search_lists = self.query_analyzer.process_multiple_queries(questions)
-        analysis_time = time.time() - analysis_start
-        
-        # Step 2: Execute all searches in parallel
+        # Step 1: Execute all searches in parallel
         search_start = time.time()
         all_search_results = []
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            search_futures = []
+            search_futures = {executor.submit(self.intelligent_search, q): q for q in questions}
             
-            for i, search_queries in enumerate(query_search_lists):
-                if len(search_queries) == 1:
-                    # Single query search
-                    future = executor.submit(self.find_relevant_chunks, search_queries[0], 5)
-                    search_futures.append((future, i, 'single'))
-                else:
-                    # Multi-query parallel search
-                    future = executor.submit(self.query_analyzer.parallel_search, self, search_queries, 3)
-                    search_futures.append((future, i, 'parallel'))
-            
-            # Collect search results
-            results_by_index = {}
-            for future, query_index, search_type in search_futures:
+            results_by_question = {}
+            for future in concurrent.futures.as_completed(search_futures):
+                question = search_futures[future]
                 try:
                     results = future.result()
-                    results_by_index[query_index] = results
-                    print(f"   ✅ Query {query_index + 1}: {len(results)} chunks found")
+                    results_by_question[question] = results
+                    print(f"   ✅ Query '{question}': {len(results)} chunks found")
                 except Exception as e:
-                    print(f"   ❌ Query {query_index + 1} search failed: {e}")
-                    results_by_index[query_index] = []
+                    print(f"   ❌ Query '{question}' search failed: {e}")
+                    results_by_question[question] = []
             
             # Ensure results are in order
-            for i in range(len(questions)):
-                all_search_results.append(results_by_index.get(i, []))
+            for q in questions:
+                all_search_results.append(results_by_question.get(q, []))
         
         search_time = time.time() - search_start
-
-        # print('all_search_resultssss', all_search_results)
         
-        # Step 3: Generate answers for all queries in parallel
+        # Step 2: Generate answers for all queries in parallel
         answer_start = time.time()
         answers = []
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            answer_futures = []
-            
+            answer_futures = {}
             for i, (question, search_results) in enumerate(zip(questions, all_search_results)):
                 if search_results:
                     future = executor.submit(self.query_enhancer.get_most_relevant_chunk, question, search_results)
-                    answer_futures.append((future, i))
+                    answer_futures[future] = i
                 else:
-                    answers.append(f"No relevant information found for this query.")
-            
+                    # Pre-fill answer for questions with no results
+                    answers.append((i, f"No relevant information found for this query."))
+
             # Collect answers in order
             answers_by_index = {}
-            for future, query_index in answer_futures:
+            for future in concurrent.futures.as_completed(answer_futures):
+                query_index = answer_futures[future]
                 try:
                     response = future.result()
                     answer = response.get('answer', 'Unable to generate answer.') if response else 'Unable to generate answer.'
@@ -205,16 +236,13 @@ class SearchEngine:
                     print(f"   ❌ Answer {query_index + 1} generation failed: {e}")
                     answers_by_index[query_index] = f"Error generating answer: {str(e)}"
             
-            # Fill in answers that were processed
-            final_answers = []
-            for i in range(len(questions)):
-                if i in answers_by_index:
-                    final_answers.append(answers_by_index[i])
-                elif i < len(answers):
-                    final_answers.append(answers[i])  # No search results case
-                else:
-                    final_answers.append("Unable to process this query.")
-        
+            # Add pre-filled answers
+            for i, answer in answers:
+                answers_by_index[i] = answer
+
+            # Combine all answers in the correct order
+            final_answers = [answers_by_index[i] for i in sorted(answers_by_index.keys())]
+
         answer_time = time.time() - answer_start
         total_time = time.time() - total_start
         
@@ -222,7 +250,6 @@ class SearchEngine:
         print(f"   • Total Queries: {len(questions)}")
         print(f"   • Successful Answers: {len([a for a in final_answers if not a.startswith('Error') and not a.startswith('No relevant') and not a.startswith('Unable')])}")
         print(f"\n⏱️  TIMING:")
-        print(f"   • Query Analysis: {analysis_time:.2f}s")
         print(f"   • Parallel Search: {search_time:.2f}s")
         print(f"   • Answer Generation: {answer_time:.2f}s")
         print(f"   • Total Time: {total_time:.2f}s")
