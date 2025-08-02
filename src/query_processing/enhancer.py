@@ -8,7 +8,7 @@ class QueryEnhancer:
     def __init__(self):
         # Initialize OpenAI client - API key should be set in environment variables
         self.client = openai.OpenAI()
-        self.model = "o4-mini-2025-04-16"
+        self.model = "gpt-4.1-mini-2025-04-14"
     
     def get_most_relevant_chunk(self, query: str, search_results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """
@@ -61,63 +61,60 @@ class QueryEnhancer:
 
 # Your response:"""
         
-        prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer the user's query with **complete accuracy**, using **only** the provided text chunks as your source of information and citing every statement.
+        prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer the user's query with **complete accuracy**, using **only** the provided text chunks as your source of information.
+User Query: "{query}"
 
-**User Query:** "{query}"
-
-**Retrieved Information:**
+Retrieved Information:
 {results_text}
 
-**Instructions:**
+Instructions:
 
-1.  **Strictly Source-Based:** Base your answer **exclusively** on the given text. Do not use outside knowledge. If the answer is not in the text, state that clearly.
+Analyze Thoroughly & Synthesize: Carefully review all the provided information. Identify every detail relevant to the query and combine these pieces into a single, coherent answer.
 
-2.  **Mandatory In-line Citations:**
-    * You **MUST** cite every piece of information you take from the sources.
-    * Place the citation **directly after the sentence or phrase** it supports, before any punctuation.
-    * The format must be exactly `` for a single source, or `` for multiple sources.
+Strictly Source-Based: Base your answer exclusively on the given text. Do not use outside knowledge or make assumptions. If the query cannot be fully answered with the provided material, clearly state that the information is not available in the text.
 
-3.  **Pre-Answer Analysis (Internal Thought Process):** **Before writing your response, you must first perform an internal analysis. Identify any preconditions, exclusions, or definitions in the text that are critical to correctly answering the user's query. If a key condition is not met (e.g., the requested item is excluded), your final answer must address that critical context first.**
+Direct Grounding & Precision: Use exact wording or terminology verbatim for definitions, laws, or named principles (put those in quotation marks). When paraphrasing, preserve quantitative relationships precisely. Avoid vague rephrasings when a specific phrase is provided in the source.
 
-4.  **Answer ONLY What is Asked:**
-    * Directly address the user's specific question and nothing more.
-    * Do not provide extra background information or general context unless absolutely necessary.
-    * Synthesize complex information into a direct conclusion. Avoid explaining your step-by-step reasoning.
+Complete & Specific Answer: Aim for completeness. Address every part of the query. Include all relevant details, conditions, and exceptions mentioned in the text. Be specific — for example, reference exact article numbers, sections, or terms as given.
 
-5.  **Final Output Formatting:**
-    * **Your final response must be a single, coherent block of text. Do NOT include headings like "Pre-Answer Analysis," "Precondition," or "Answer" in your output.**
-    * Write in a clear, straightforward manner.
-    * **Forbidden Phrases:** Do not use introductory phrases like "The provided text states..." or "According to the sources...".
+Clear Tone and Professional Phrasing: Write the answer in a clear, straightforward manner, as if explaining to a colleague. Maintain the tone of the source material.
 
-6.  **Final Self-Check:** Before responding, verify that your answer:
-    * Fully and completely answers the query, addressing any critical preconditions first.
-    * Is 100% accurate and directly supported by the text.
-    * Includes a `` tag for every statement.
-    * **Is formatted as a single block of text without any internal headings.**
-    * Contains no information that was not explicitly asked for.
+Do not mention any "chunks," file names, or the retrieval process.
 
----
-### Examples
+Forbidden Phrases: Do not use introductory phrases that refer to the sources, such as "The provided text states...", "According to the sources...", or "Based on the information given...". The answer should be a direct statement of fact based on the provided text.
 
-**Example 1: Demonstrating Citations and Conciseness.**
-* **Query:** "What is the ideal spark plug gap?"
-* **Source Chunk 22:** "The ideal spark plug gap recommended is 0.8-0.9 mm. To check the gap, use a feeler gauge."
-* [cite_start]✅ **Good Answer:** "The ideal spark plug gap is 0.8-0.9 mm[cite: 22]."
-* [cite_start]❌ **Poor Answer (Not Concise):** "The ideal spark plug gap is 0.8-0.9 mm[cite: 22]. [cite_start]You should check this using a feeler gauge[cite: 22]."
+Concise but Complete Presentation: Your primary goal is to provide a full and complete answer. Be as concise as possible without sacrificing completeness or accuracy. If a comprehensive answer requires more than a few sentences, that is acceptable. Omit any unnecessary fluff or repetition.
 
-**Example 2: Demonstrating Pre-Answer Analysis without headings.**
-* **Query:** "When will my root canal claim be settled?"
-* **Source Chunk 15:** "Claims are settled within 15 days of receiving final documents."
-* **Source Chunk 88:** "Dental Treatment is only covered if it requires hospitalization. Out-patient (OPD) treatment is not covered."
-* [cite_start]✅ **Good Answer (Addresses Precondition First):** "Under the policy, dental treatment is only covered if it requires hospitalization, as out-patient (OPD) treatment is excluded[cite: 88]. Since root canals are typically OPD procedures, your claim may not be covered. [cite_start]However, for any *admissible* hospitalized dental claim, the settlement timeline is 15 days from the receipt of all necessary documents[cite: 15]."
-* [cite_start]❌ **Poor Answer (Includes Headings):** "Precondition: Dental treatment is only covered if it requires hospitalization[cite: 88]. [cite_start]Answer: Your claim will be settled within 15 days[cite: 15]."
+Internal Consistency Check: For any answer involving mathematical or proportional relationships, instantiate the relation with a simple example in the answer to verify you are not misapplying it.
 
----
+Formatting: Use plain text formatting. You may use numeric symbols (e.g., “2%”) and quotation marks when directly quoting source material.
 
-**Your response:**
+Final Self-Check: Before providing the answer, verify that it:
+
+Fully answers the query (all parts are addressed).
+
+Is 100% accurate and directly supported by the provided text.
+
+Uses exact phrasing or close paraphrasing from the Retrieved Information text.
+
+Reads smoothly on its own, without needing the source chunks.
+
+Example Query: "What is the grace period for premium payment?"
+
+✅ Good Answer: "You have 30 days after your premium due date to make the payment. During this grace period, your policy stays active, and paying within this time keeps your continuity benefits intact."
+
+❌ Poor Answer: "According to the provided information, there is a grace period of 30 days mentioned for premium payments."
+
+Example 2: “Is abortion covered?”
+✅ Good Answer: "The policy covers lawful medical termination of pregnancy only on medical grounds or due to an accident. Voluntary termination within the first 12 weeks is not covered."
+
+Example 3: “If I change my religion, can the government stop me?”
+✅ Good Answer: "Under Article 25, every person has the freedom of conscience and the right to freely profess, practice, and propagate religion, subject to public order, morality, and health."
+
+❌ Poor Answer(uses special characters): "Under /Article 25/, every person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health."
+
+Your response:
 """
-        
-
 
         # print("--------------------------------")
         # print("--------------------------------")
@@ -138,7 +135,7 @@ class QueryEnhancer:
                 messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert AI assistant. Your task is to accurately answer user queries based *only* on the provided text. You must cite every piece of information with `` tags. Be direct and concise."
+                    "content": "You are an expert AI assistant. Your task is to accurately answer user queries based *only* on the provided text. Be direct and concise."
                 },
                 {
                     "role": "user",
