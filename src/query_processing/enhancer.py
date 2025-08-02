@@ -61,59 +61,52 @@ class QueryEnhancer:
 
 # Your response:"""
         
+# This is the prompt for your get_most_relevant_chunk method
         prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer the user's query with **complete accuracy**, using **only** the provided text chunks as your source of information.
-User Query: "{query}"
 
-Retrieved Information:
+**User Query:** "{query}"
+
+**Retrieved Information:**
 {results_text}
 
-Instructions:
+**Instructions:**
 
-Analyze Thoroughly & Synthesize: Carefully review all the provided information. Identify every detail relevant to the query and combine these pieces into a single, coherent answer.
+1.  **Strictly Source-Based:** Base your answer **exclusively** on the given text. Do not use outside knowledge. If the answer is not in the text, you must state that the information is not available.
 
-Strictly Source-Based: Base your answer exclusively on the given text. Do not use outside knowledge or make assumptions. If the query cannot be fully answered with the provided material, clearly state that the information is not available in the text.
+2.  **Answer ONLY What is Asked:**
+    * **This is the most important rule.** Directly address the user's specific question and nothing more.
+    * Do not provide extra background information, related procedures, or general context unless it is absolutely necessary to answer the specific question.
+    * **Synthesize complex information into a direct conclusion.** Avoid showing your step-by-step reasoning unless the query explicitly asks for an explanation.
 
-Direct Grounding & Precision: Use exact wording or terminology verbatim for definitions, laws, or named principles (put those in quotation marks). When paraphrasing, preserve quantitative relationships precisely. Avoid vague rephrasings when a specific phrase is provided in the source.
+3.  **Prioritize Completeness, then Conciseness:** Your primary goal is a **complete and accurate** answer that addresses all parts of the query. Once that is achieved, the answer must be as **concise** as possible. Do not add unnecessary words or repeat information.
 
-Complete & Specific Answer: Aim for completeness. Address every part of the query. Include all relevant details, conditions, and exceptions mentioned in the text. Be specific — for example, reference exact article numbers, sections, or terms as given.
+4.  **Clear Tone and Professional Phrasing:** Write the answer in a clear, straightforward manner.
+    * **Forbidden Phrases:** Do not use introductory phrases that refer to the sources, such as "The provided text states...", "According to the sources...", or "Based on the information given...". The answer should be a direct statement of fact.
 
-Clear Tone and Professional Phrasing: Write the answer in a clear, straightforward manner, as if explaining to a colleague. Maintain the tone of the source material.
+5.  **Final Self-Check:** Before providing the answer, verify that it:
+    * Fully and completely answers the query.
+    * Is 100% accurate and directly supported by the provided text.
+    * **Contains no information that was not explicitly asked for.**
+    * Is as concise and direct as possible.
 
-Do not mention any "chunks," file names, or the retrieval process.
+---
+### Examples
 
-Forbidden Phrases: Do not use introductory phrases that refer to the sources, such as "The provided text states...", "According to the sources...", or "Based on the information given...". The answer should be a direct statement of fact based on the provided text.
+**Example 1: A question asking for a specific value (Demonstrates Conciseness).**
+* **Query:** "What is the ideal spark plug gap recommended?"
+* **Source Text:** "The ideal spark plug gap recommended is 0.8-0.9 mm. To check the gap, use a feeler gauge. The washer must be in good condition before tightening."
+* ✅ **Good Answer:** "The ideal spark plug gap is 0.8-0.9 mm."
+* ❌ **Poor Answer (Not Concise):** "The ideal spark plug gap recommended is 0.8-0.9 mm. You should check this using a wire-type feeler gauge, and if adjustment is necessary, the side electrode should be carefully bent. The spark plug washer must also be in good condition."
 
-Concise but Complete Presentation: Your primary goal is to provide a full and complete answer. Be as concise as possible without sacrificing completeness or accuracy. If a comprehensive answer requires more than a few sentences, that is acceptable. Omit any unnecessary fluff or repetition.
+**Example 2: A yes/no question requiring synthesis (Demonstrates Synthesizing to a Conclusion).**
+* **Query:** "I renewed my policy yesterday, and I have been a customer for the last 6 years. Can I raise a claim for Hydrocele?"
+* **Source Text:** "Hydrocele is listed under the 'Specific Disease/Procedure Waiting Period' with a two-year (24 months) waiting period. The waiting period applies from the date of inception of the first policy and requires continuous coverage."
+* ✅ **Good Answer:** "Yes, you can raise a claim. Your 6 years of continuous coverage exceeds the 24-month waiting period for Hydrocele."
+* ❌ **Poor Answer (Shows "Too Much Work"):** "To raise a claim for Hydrocele, you must complete a waiting period of 24 months. The waiting period requires continuous coverage. Since you have been a customer for 6 years, which is longer than 24 months, you are eligible to raise a claim."
 
-Internal Consistency Check: For any answer involving mathematical or proportional relationships, instantiate the relation with a simple example in the answer to verify you are not misapplying it.
+---
 
-Formatting: Use plain text formatting. You may use numeric symbols (e.g., “2%”) and quotation marks when directly quoting source material.
-
-Final Self-Check: Before providing the answer, verify that it:
-
-Fully answers the query (all parts are addressed).
-
-Is 100% accurate and directly supported by the provided text.
-
-Uses exact phrasing or close paraphrasing from the Retrieved Information text.
-
-Reads smoothly on its own, without needing the source chunks.
-
-Example Query: "What is the grace period for premium payment?"
-
-✅ Good Answer: "You have 30 days after your premium due date to make the payment. During this grace period, your policy stays active, and paying within this time keeps your continuity benefits intact."
-
-❌ Poor Answer: "According to the provided information, there is a grace period of 30 days mentioned for premium payments."
-
-Example 2: “Is abortion covered?”
-✅ Good Answer: "The policy covers lawful medical termination of pregnancy only on medical grounds or due to an accident. Voluntary termination within the first 12 weeks is not covered."
-
-Example 3: “If I change my religion, can the government stop me?”
-✅ Good Answer: "Under Article 25, every person has the freedom of conscience and the right to freely profess, practice, and propagate religion, subject to public order, morality, and health."
-
-❌ Poor Answer(uses special characters): "Under /Article 25/, every person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health."
-
-Your response:
+**Your response:**
 """
 
         # print("--------------------------------")
