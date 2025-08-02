@@ -159,33 +159,35 @@ User Query: "{query}"
         return unique_results
     
     def _batch_analyze_and_decompose(self, queries: List[str]) -> List[List[str]]:
-        prompt = f"""You are a sophisticated research analyst AI. Your function is to deconstruct a user's natural language query into a set of optimized, atomic search phrases for a vector search engine. Your goal is to ensure comprehensive information retrieval.
+        prompt = f"""You are a sophisticated research analyst AI. Your function is to deconstruct a user's natural language query into a set of optimized, atomic search phrases for a vector search engine. Your goal is to ensure comprehensive information retrieval by anticipating all necessary context.
 
 **For each user query, you must follow these rules:**
 
-**1. Simple Queries:** If a query is a single, direct question (e.g., "What is the limit for X?", "Define Y"), it is SIMPLE. Do NOT decompose it. Return it as a single-item list.
+**1. Simple Queries:** If a query is a single, direct question (e.g., "What is the limit for X?"), it is SIMPLE. Do NOT decompose it. Return it as a single-item list.
    * *Example:* "What is the waiting period for cataract surgery?" -> `["waiting period for cataract surgery"]`
 
-**2. Complex Queries:** If a query combines multiple related concepts or conditions, it is COMPLEX. Decompose it into its meaningful, focused, searchable parts.
-   * *Example:* "What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?"
-   * *Decomposition:* `["Grace Period definition in National Parivar Mediclaim Plus Policy", "Length of Grace Period for premium payment", "Policy renewal conditions after premium due date"]`
-
-**3. Scenario-Based or Narrative Queries:** If a query is a story, first identify the user's core question, then decompose it into conceptual search phrases. **Ignore all irrelevant contextual details.**
-   * *Example:* "I have a claim for Rs 200,000 with HDFC, and it's approved. My total expenses are Rs 250,000. Can I raise the remaining Rs 50,000 with this policy?"
-   * *Correct Decomposition:* `["Claiming from multiple insurance policies for a single hospitalization", "Process for claiming the balance amount from a second insurer", "How to submit a claim after receiving partial payment from another insurer", "Contribution clause in health insurance"]`
-   * *Reasoning:* The breakdown focuses on the core concepts ('multiple policies', 'balance amount') and correctly ignores the irrelevant details ('HDFC', 'Rs 200,000').
-
-**4. Composite Queries:** **If a query asks for two or more distinct, unrelated pieces of information, it is COMPOSITE. Decompose it into separate, focused queries for each distinct part.**
+**2. Composite Queries:** If a query asks for two or more distinct, unrelated pieces of information, it is COMPOSITE. Decompose it into separate, focused queries for each distinct part.
    * *Example:* "Tell me the spark plug gap and the process for replacing a lost ID card."
    * *Correct Decomposition:* `["recommended spark plug gap", "process to replace a lost ID card"]`
 
+**3. Scenario-Based Queries:** If a query is a story, identify the user's core question and decompose it into conceptual search phrases. Ignore all irrelevant contextual details.
+   * *Example:* "I have a claim for Rs 200,000 with HDFC... Can I raise the remaining Rs 50,000 with this policy?"
+   * *Correct Decomposition:* `["Claiming from multiple insurance policies for a single hospitalization", "Process for claiming the balance amount from a second insurer", "Contribution clause in health insurance"]`
+
+**4. Vague or Broad Queries:** If a query is vague (e.g., "Tell me about my policy"), break it down into a list of key policy sections.
+   * *Example:* "What are the main benefits?" -> `["list of policy benefits", "inpatient hospitalization coverage", "outpatient treatment coverage", "policy exclusions and limitations"]`
+
+**5. Implicit Context Generation (Most Important Rule):**
+   * **For any specific query, you must also generate additional, contextual sub-queries to check for relevant preconditions, definitions, and exclusions that might affect the answer.** This is the most critical step to ensure accuracy.
+   * *Example:* "When will my root canal claim be settled?"
+   * *Correct Decomposition:*
+     `["claim settlement timeline", "coverage for root canal treatment", "exclusions for dental procedures", "definition of outpatient (OPD) treatment"]`
+   * *Reasoning:* This decomposition correctly searches for the settlement timeline (the user's literal question) AND the critical, implicit context about whether the procedure is covered at all.
 
 **OPTIMIZATION PRINCIPLES:**
 
-* **Preserve Intent**: Maintain the user's original goal.
-* **Enhance Searchability with Expert Terminology**: Translate conversational language into formal, industry-standard terms likely to be in the source document (e.g., 'claiming from two policies' becomes 'contribution clause' or 'multiple policies').
-* **Focus on the Core Task**: You are searching a specific document. You **MUST** ignore extraneous details not relevant to the document's terms (e.g., names of other companies, specific monetary values unless they are a policy limit, personal anecdotes).
-* **Semantic Clarity**: Each component should be a self-contained, meaningful question.
+* **Enhance Searchability:** Translate conversational language into formal, industry-standard terms.
+* **Focus on the Core Task**: Ignore extraneous details not relevant to the document's terms (e.g., names of other companies, specific monetary values).
 
 **Input Format:** A JSON list of strings, where each string is a user query.
 **Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts.
