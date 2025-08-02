@@ -159,57 +159,41 @@ User Query: "{query}"
         return unique_results
     
     def _batch_analyze_and_decompose(self, queries: List[str]) -> List[List[str]]:
-        """
-        Send a batch of queries to the LLM and return a list of decomposed queries for each input query.
-        """
-        prompt = f"""
-      You are an expert system for query understanding and optimization. Your core function is to transform a user's natural language query into a set of optimized, self-contained search phrases. These phrases are intended to be used individually against a semantic or vector search engine to retrieve the most relevant information comprehensively.
+        prompt = f"""You are a sophisticated research analyst AI. Your function is to deconstruct a user's natural language query into a set of optimized, atomic search phrases for a vector search engine. Your goal is to ensure comprehensive information retrieval.
 
-For each user query in the input JSON list, you must decide if it's simple or complex.
+**For each user query, you must follow these rules:**
 
-RULES:
-Simple Queries: If a query is a single, direct question (especially "coverage for …", "limit for …", "how much …"), it is SIMPLE. Do NOT decompose it. Return it as a single-item list in the JSON output.
+**1. Simple Queries:** If a query is a single, direct question (e.g., "What is the limit for X?", "Define Y"), it is SIMPLE. Do NOT decompose it. Return it as a single-item list.
+   * *Example:* "What is the waiting period for cataract surgery?" -> `["waiting period for cataract surgery"]`
 
-Examples: "How does the policy define a 'Hospital'?", "What is the waiting period for cataract surgery?"
+**2. Complex Queries:** If a query combines multiple related concepts or conditions, it is COMPLEX. Decompose it into its meaningful, focused, searchable parts.
+   * *Example:* "What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?"
+   * *Decomposition:* `["Grace Period definition in National Parivar Mediclaim Plus Policy", "Length of Grace Period for premium payment", "Policy renewal conditions after premium due date"]`
 
-Complex Queries: If a query combines multiple distinct concepts or conditions, it is COMPLEX. Decompose it into meaningful, focused, searchable parts.
+**3. Scenario-Based or Narrative Queries:** If a query is a story, first identify the user's core question, then decompose it into conceptual search phrases. **Ignore all irrelevant contextual details.**
+   * *Example:* "I have a claim for Rs 200,000 with HDFC, and it's approved. My total expenses are Rs 250,000. Can I raise the remaining Rs 50,000 with this policy?"
+   * *Correct Decomposition:* `["Claiming from multiple insurance policies for a single hospitalization", "Process for claiming the balance amount from a second insurer", "How to submit a claim after receiving partial payment from another insurer", "Contribution clause in health insurance"]`
+   * *Reasoning:* The breakdown focuses on the core concepts ('multiple policies', 'balance amount') and correctly ignores the irrelevant details ('HDFC', 'Rs 200,000').
 
-Example: "What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?"
+**4. Composite Queries:** **If a query asks for two or more distinct, unrelated pieces of information, it is COMPOSITE. Decompose it into separate, focused queries for each distinct part.**
+   * *Example:* "Tell me the spark plug gap and the process for replacing a lost ID card."
+   * *Correct Decomposition:* `["recommended spark plug gap", "process to replace a lost ID card"]`
 
-Decomposition: ["Grace Period definition in National Parivar Mediclaim Plus Policy", "Length of Grace Period for premium payment", "Policy renewal conditions after premium due date"]
 
-Scenario-Based or Narrative Queries: If a query is a story or scenario, first identify the user's core question, then decompose it into conceptual search phrases. Ignore irrelevant details.
+**OPTIMIZATION PRINCIPLES:**
 
-Example of a Narrative Query: "I have a claim for Rs 200,000 with HDFC, and it's approved. My total expenses are Rs 250,000. Can I raise the remaining Rs 50,000 with this policy?"
+* **Preserve Intent**: Maintain the user's original goal.
+* **Enhance Searchability with Expert Terminology**: Translate conversational language into formal, industry-standard terms likely to be in the source document (e.g., 'claiming from two policies' becomes 'contribution clause' or 'multiple policies').
+* **Focus on the Core Task**: You are searching a specific document. You **MUST** ignore extraneous details not relevant to the document's terms (e.g., names of other companies, specific monetary values unless they are a policy limit, personal anecdotes).
+* **Semantic Clarity**: Each component should be a self-contained, meaningful question.
 
-Correct Decomposition: ["Claiming from multiple insurance policies for a single hospitalization", "Process for claiming the balance amount from a second insurer", "How to submit a claim after receiving partial payment from another insurer", "Contribution clause in health insurance"]
+**Input Format:** A JSON list of strings, where each string is a user query.
+**Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts.
 
-Reasoning: The breakdown focuses on the core concepts ('multiple policies', 'balance amount') and ignores the specific, irrelevant details ('HDFC', 'Rs 200,000').
-
-OPTIMIZATION PRINCIPLES:
-Preserve Intent: Maintain the user's original question intent.
-
-Enhance Searchability with Expert Terminology: Use terms and phrases likely to appear in formal documents. Translate conversational language into industry-standard concepts (e.g., "claiming from two policies" can be broken down into "contribution clause" or "multiple insurance policies").
-
-Focus on the Core Task: Your goal is to find information in a specific policy document. You MUST ignore extraneous details that are not relevant to the policy's terms, such as:
-
-Names of other companies (e.g., HDFC, Max Bupa, etc.).
-
-Specific monetary amounts, unless they are a potential policy limit.
-
-Personal anecdotes or information not directly related to a policy feature.
-
-Avoid Over-decomposition: Don't break simple concepts unnecessarily.
-
-Semantic Clarity: Each component should be semantically complete and searchable on its own.
-
-Input Format: A JSON list of strings, where each string is a user query.
-Output Format: You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts (or the original query if it was simple).
-
-Input:
+**Input:**
 {json.dumps(queries, ensure_ascii=False)}
 
-Output (JSON):
+**Output (JSON):**
 """
         
         def _make_batch_api_call():

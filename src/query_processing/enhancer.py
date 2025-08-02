@@ -8,7 +8,7 @@ class QueryEnhancer:
     def __init__(self):
         # Initialize OpenAI client - API key should be set in environment variables
         self.client = openai.OpenAI()
-        self.model = "gpt-4.1-mini-2025-04-14"
+        self.model = "o4-mini-2025-04-16"
     
     def get_most_relevant_chunk(self, query: str, search_results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """
@@ -62,51 +62,63 @@ class QueryEnhancer:
 # Your response:"""
         
         prompt = f"""
-You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer the user's query with complete accuracy, using only the provided text chunks as your source of information.
+You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer the user's query with **complete accuracy**, using **only** the provided text chunks as your source of information and citing every statement.
 
-User Query: "{query}"
+**User Query:** "{query}"
 
-Retrieved Information:
+**Retrieved Information:**
 {results_text}
 
 **Instructions:**
 
-1.  **Analyze Thoroughly & Synthesize:** Carefully review all the provided information. Identify every detail relevant to the query and combine these pieces into a single, coherent answer.
+1.  **Strictly Source-Based:** Base your answer **exclusively** on the given text. Do not use outside knowledge. If the answer is not in the text, state that clearly.
 
-2.  **Strictly Source-Based:** Base your answer **exclusively** on the given text. **Do not** use outside knowledge or make assumptions. **Your response must reflect only what the author has written, not what is known from modern knowledge on the topic.** If the query cannot be fully answered with the provided material, clearly state that the information is not available in the text.
+2.  **Mandatory In-line Citations:**
+    * You **MUST** cite every piece of information you take from the sources.
+    * Place the citation **directly after the sentence or phrase** it supports, before any punctuation.
+    * The format must be exactly `` for a single source, or `` for multiple sources.
 
-3.  **Describe the Author's Method:** **When explaining a proof, derivation, or argument, you must describe the specific method and reasoning used *by the author in the provided text*. Do not substitute, supplement, or append modern or alternative explanations, even if they lead to the same conclusion.**
+3.  **Pre-Answer Analysis:** **Before writing the final answer, first identify any preconditions, exclusions, or definitions in the text that are critical to correctly answering the user's query. If a key condition is not met (e.g., the requested item is excluded from the policy), you must address that critical context first before answering the user's specific question.**
 
-4.  **Direct Grounding & Precision:** Use exact wording or terminology verbatim for definitions, laws, or named principles (put those in quotation marks). When paraphrasing, preserve quantitative relationships precisely.
+4.  **Answer ONLY What is Asked:**
+    * Directly address the user's specific question and nothing more.
+    * Do not provide extra background information or general context unless it is absolutely necessary.
+    * Synthesize complex information into a direct conclusion. Avoid explaining your step-by-step reasoning.
 
-5.  **Complete & Specific Answer:** Aim for completeness. Address every part of the query. Include all relevant details, conditions, and exceptions mentioned in the text.
+5.  **Prioritize Completeness, then Conciseness:** Your primary goal is a **complete and accurate** answer. Once all parts of the query are addressed, the answer must be as **concise** as possible.
 
-6.  **Concise but Complete Presentation:** Your primary goal is to provide a full and complete answer. Be as concise as possible ***without sacrificing completeness or accuracy***. If a complete answer requires more than a few sentences, that is acceptable.
+6.  **Final Self-Check:** Before responding, verify that your answer:
+    * Fully and completely answers the query, **addressing any critical preconditions first**.
+    * Is 100% accurate and directly supported by the text.
+    * **Includes a `` tag for every statement.**
+    * Contains no information that was not explicitly asked for.
 
-7.  **Clear Tone and Professional Phrasing:** Write the answer in a clear, straightforward manner.
-    * **Forbidden Phrases:** **Do not** use introductory phrases that refer to the sources, such as "The provided text states..." or "According to the sources...".
+---
+### Examples
 
-8.  **Final Self-Check:** Before providing the answer, verify that it:
-    * Fully **answers the query**.
-    * Is **100% accurate** and directly supported by the provided text.
-    * **Accurately represents the author's own methodology and reasoning, without adding outside information or modern interpretations.**
-    * Reads smoothly on its own.
+**Example 1: Demonstrating Citations and Conciseness.**
+* **Query:** "What is the ideal spark plug gap?"
+* **Source Chunk 22:** "The ideal spark plug gap recommended is 0.8-0.9 mm. To check the gap, use a feeler gauge."
+* [cite_start]✅ **Good Answer:** "The ideal spark plug gap is 0.8-0.9 mm[cite: 22]."
+* [cite_start]❌ **Poor Answer (Not Concise):** "The ideal spark plug gap is 0.8-0.9 mm[cite: 22]. [cite_start]You should check this using a feeler gauge[cite: 22]."
 
-Example Query: "What is the grace period for premium payment?"
+**Example 2: Demonstrating Synthesis and Conciseness.**
+* **Query:** "I have been a customer for 6 years. Can I claim for Hydrocele?"
+* **Source Chunk 41:** "Hydrocele has a waiting period of 24 months."
+* **Source Chunk 40:** "The waiting period applies from the start of the first policy and requires continuous coverage."
+* [cite_start]✅ **Good Answer:** "Yes, you can raise a claim, as your 6 years of continuous coverage exceeds the 24-month waiting period for Hydrocele[cite: 40, 41]."
+* [cite_start]❌ **Poor Answer (Too Verbose):** "To raise a claim for Hydrocele, you must complete a waiting period of 24 months[cite: 41]. [cite_start]This waiting period requires continuous coverage[cite: 40]. [cite_start]Since you have been a customer for 6 years, which is longer than 24 months, you are eligible to raise a claim[cite: 40, 41]."
 
-✅ Good Answer: "You have 30 days after your premium due date to make the payment. During this grace period, your policy stays active, and paying within this time keeps your continuity benefits intact."
+**Example 3: Demonstrating Pre-Answer Analysis.**
+* **Query:** "When will my root canal claim be settled?"
+* **Source Chunk 15:** "Claims are settled within 15 days of receiving final documents."
+* **Source Chunk 88:** "Dental Treatment is only covered if it requires hospitalization. Out-patient (OPD) treatment is not covered."
+* [cite_start]✅ **Good Answer (Addresses Precondition First):** "Under the policy, dental treatment is only covered if it requires hospitalization, as out-patient (OPD) treatment is excluded[cite: 88]. Since root canals are typically OPD procedures, your claim may not be covered. [cite_start]However, for any *admissible* hospitalized dental claim, the settlement timeline is 15 days from the receipt of all necessary documents[cite: 15]."
+* [cite_start]❌ **Poor Answer (Misses the Precondition):** "Your claim will be settled within 15 days from the receipt of all necessary documents[cite: 15]."
 
-❌ Poor Answer: "According to chunk 1, there is a grace period of 30 days mentioned for premium payments."
+---
 
-Example 2: “Is abortion covered?”
-✅ Good Answer: "The policy covers lawful medical termination of pregnancy only on medical grounds or due to an accident. Voluntary termination within the first 12 weeks is not covered."
-
-Example 3: “If I change my religion, can the government stop me?”
-✅ Good Answer: "Under Article 25, every person has the freedom of conscience and the right to freely profess, practice, and propagate religion, subject to public order, morality, and health."
-
-❌ Poor Answer(uses special characters): "Under /Article 25/, every person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health."
-
-Your response:
+**Your response:**
 """
         
 
@@ -128,17 +140,17 @@ Your response:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer the user's query with **complete accuracy**, using **only** the provided text chunks as your source of information."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=1024,
-                temperature=0.1
+                {
+                    "role": "system",
+                    "content": "You are an expert AI assistant. Your task is to accurately answer user queries based *only* on the provided text. You must cite every piece of information with `` tags. Be direct and concise."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+                max_completion_tokens=1500,
+                # temperature=0.0
             )
             
             answer_text = response.choices[0].message.content.strip()
