@@ -213,7 +213,7 @@ For ANY query, always include:
 * **Relationship-Aware**: Connect related concepts and processes
 
 **QUALITY OVER QUANTITY:**
-- Select only the 4-5 most essential queries that provide 80% of needed information
+- Prioritize only the 2-3 most essential queries that provide 80% of needed information
 - Prioritize queries that resolve the most common ambiguities
 - Focus on actionable and definitive information
 - Avoid redundant or overly specific variations
