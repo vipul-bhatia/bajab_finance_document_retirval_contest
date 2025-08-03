@@ -8,7 +8,7 @@ class QueryEnhancer:
     def __init__(self):
         # Initialize OpenAI client - API key should be set in environment variables
         self.client = openai.OpenAI()
-        self.model = "gpt-4.1-nano-2025-04-14"
+        self.model = "gpt-4.1-mini-2025-04-14"
     
     def get_most_relevant_chunk(self, query: str, search_results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """
