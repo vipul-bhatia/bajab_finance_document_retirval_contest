@@ -12,7 +12,7 @@ class QueryAnalyzer:
         # Initialize OpenAI client - API key should be set in environment variables
         # self.client = openai.OpenAI()
         # self.model = "gpt-4.1-mini-2025-04-14"
-        self.model = genai.GenerativeModel('gemini-1.5-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
     
     def _retry_with_backoff(self, func, max_retries=2, backoff_factor=1):
         """
