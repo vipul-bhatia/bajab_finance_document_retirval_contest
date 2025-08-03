@@ -1,8 +1,6 @@
-import openai
 import concurrent.futures
 import time
 from typing import List, Dict, Any
-from ..embeddings import EmbeddingGenerator
 import json
 import google.generativeai as genai
 
@@ -159,35 +157,60 @@ User Query: "{query}"
         return unique_results
     
     def _batch_analyze_and_decompose(self, queries: List[str]) -> List[List[str]]:
-        prompt = f"""You are a sophisticated research analyst AI. Your function is to deconstruct a user's natural language query into a set of optimized, atomic search phrases for a vector search engine. Your goal is to ensure comprehensive information retrieval by anticipating all necessary context.
+        prompt = f"""You are a sophisticated research analyst AI with enhanced query understanding capabilities. Your function is to analyze user intent and deconstruct queries into optimized search phrases for comprehensive information retrieval.
 
-**For each user query, you must follow these rules:**
+**STEP 1: INTENT CLASSIFICATION**
+For each query, first classify its intent:
+- **FACTUAL**: Direct fact lookup (What is X?, When does Y occur?)
+- **PROCEDURAL**: Process or step-by-step explanation (How to do X?)
+- **CONDITIONAL**: Scenario-based reasoning (If X happens, then what?)
+- **COMPARATIVE**: Comparison between options (X vs Y, differences between)
+- **ANALYTICAL**: Understanding relationships or implications (Why X?, What causes Y?)
 
-**1. Simple Queries:** If a query is a single, direct question (e.g., "What is the limit for X?"), it is SIMPLE. Do NOT decompose it. Return it as a single-item list.
-   * *Example:* "What is the waiting period for cataract surgery?" -> `["waiting period for cataract surgery"]`
+**STEP 2: DECOMPOSITION STRATEGY**
+Based on intent, apply appropriate decomposition:
 
-**2. Composite Queries:** If a query asks for two or more distinct, unrelated pieces of information, it is COMPOSITE. Decompose it into separate, focused queries for each distinct part.
-   * *Example:* "Tell me the spark plug gap and the process for replacing a lost ID card."
-   * *Correct Decomposition:* `["recommended spark plug gap", "process to replace a lost ID card"]`
+**1. FACTUAL Queries:** Keep simple if single fact, decompose if multiple facts needed.
+   * *Simple:* "What is the waiting period for cataract surgery?" -> `["waiting period for cataract surgery"]`
+   * *Complex:* "What are the limits and exclusions for dental treatment?" -> `["dental treatment coverage limits", "dental treatment exclusions", "dental procedure waiting periods"]`
 
-**3. Scenario-Based Queries:** If a query is a story, identify the user's core question and decompose it into conceptual search phrases. Ignore all irrelevant contextual details.
-   * *Example:* "I have a claim for Rs 200,000 with HDFC... Can I raise the remaining Rs 50,000 with this policy?"
-   * *Correct Decomposition:* `["Claiming from multiple insurance policies for a single hospitalization", "Process for claiming the balance amount from a second insurer", "Contribution clause in health insurance"]`
+**2. PROCEDURAL Queries:** Break into process steps + requirements + exceptions.
+   * *Example:* "How do I file a claim?" -> `["claim filing process steps", "required documents for claims", "claim submission timeline", "claim processing exceptions"]`
 
-**4. Vague or Broad Queries:** If a query is vague (e.g., "Tell me about my policy"), break it down into a list of key policy sections.
-   * *Example:* "What are the main benefits?" -> `["list of policy benefits", "inpatient hospitalization coverage", "outpatient treatment coverage", "policy exclusions and limitations"]`
+**3. CONDITIONAL Queries:** Decompose into condition + outcomes + exceptions + definitions.
+   * *Example:* "If I'm hospitalized for 2 days, what's covered?" -> `["minimum hospitalization duration requirements", "coverage for short-term hospitalization", "exclusions for brief hospital stays", "definition of eligible hospitalization"]`
 
-**5. Implicit Context Generation (Most Important Rule):**
-   * **For any specific query, you must also generate additional, contextual sub-queries to check for relevant preconditions, definitions, and exclusions that might affect the answer.** This is the most critical step to ensure accuracy.
-   * *Example:* "When will my root canal claim be settled?"
-   * *Correct Decomposition:*
-     `["claim settlement timeline", "coverage for root canal treatment", "exclusions for dental procedures", "definition of outpatient (OPD) treatment"]`
-   * *Reasoning:* This decomposition correctly searches for the settlement timeline (the user's literal question) AND the critical, implicit context about whether the procedure is covered at all.
+**4. COMPARATIVE Queries:** Break into individual components for comparison.
+   * *Example:* "What's the difference between Plan A and Plan B benefits?" -> `["Plan A coverage benefits", "Plan B coverage benefits", "Plan A vs Plan B comparison", "differences in plan benefits"]`
+
+**5. ANALYTICAL Queries:** Decompose into cause + effect + context + exceptions.
+   * *Example:* "Why was my claim rejected?" -> `["common claim rejection reasons", "claim assessment criteria", "policy exclusions", "claim documentation requirements"]`
+
+**ENHANCED CONTEXT GENERATION:**
+For ANY query, always include:
+- **Definitions** of key terms mentioned
+- **Prerequisites** or conditions that apply
+- **Exceptions** or limitations
+- **Related processes** that might affect the answer
+- **Cross-references** to connected topics
+
+**DISAMBIGUATION FOCUS:**
+- Resolve ambiguous pronouns (it, this, that, they)
+- Clarify context-dependent terms
+- Include related concepts that provide complete understanding
+- Address potential misinterpretations
+
+**RELATIONSHIP AWARENESS:**
+- Include queries that find connected information
+- Search for cause-effect relationships
+- Look for procedural dependencies
+- Find conditional variations
 
 **OPTIMIZATION PRINCIPLES:**
-
-* **Enhance Searchability:** Translate conversational language into formal, industry-standard terms.
-* **Focus on the Core Task**: Ignore extraneous details not relevant to the document's terms (e.g., names of other companies, specific monetary values).
+* **Intent-Driven**: Tailor decomposition to query intent
+* **Context-Complete**: Ensure all necessary context is captured
+* **Disambiguation-Ready**: Include terms that resolve ambiguities
+* **Relationship-Aware**: Connect related concepts and processes
 
 **Input Format:** A JSON list of strings, where each string is a user query.
 **Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts.
@@ -212,7 +235,7 @@ User Query: "{query}"
             # )
             # response_text = response.choices[0].message.content.strip()
 
-            print(f"\n📥 DEBUG: Raw response from Gemini:")
+            print("\n📥 DEBUG: Raw response from Gemini:")
             print(f"{'='*50}")
             print(response_text)
             print(f"{'='*50}")
