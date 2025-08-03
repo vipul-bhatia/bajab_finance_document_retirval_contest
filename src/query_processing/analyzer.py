@@ -212,6 +212,12 @@ For ANY query, always include:
 * **Disambiguation-Ready**: Include terms that resolve ambiguities
 * **Relationship-Aware**: Connect related concepts and processes
 
+**QUALITY OVER QUANTITY:**
+- Select only the 4-5 most essential queries that provide 80% of needed information
+- Prioritize queries that resolve the most common ambiguities
+- Focus on actionable and definitive information
+- Avoid redundant or overly specific variations
+
 **Input Format:** A JSON list of strings, where each string is a user query.
 **Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts.
 
