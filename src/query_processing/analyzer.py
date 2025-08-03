@@ -12,7 +12,7 @@ class QueryAnalyzer:
         # Initialize OpenAI client - API key should be set in environment variables
         # self.client = openai.OpenAI()
         # self.model = "gpt-4.1-mini-2025-04-14"
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-lite')
     
     def _retry_with_backoff(self, func, max_retries=2, backoff_factor=1):
         """
@@ -157,7 +157,7 @@ User Query: "{query}"
         return unique_results
     
     def _batch_analyze_and_decompose(self, queries: List[str]) -> List[List[str]]:
-        prompt = f"""You are a sophisticated research analyst AI with enhanced query understanding capabilities. Your function is to analyze user intent and deconstruct queries into 4-5 ESSENTIAL search phrases for comprehensive information retrieval.
+        prompt = f"""You are a sophisticated research analyst AI with enhanced query understanding capabilities. Your function is to analyze user intent and deconstruct queries into optimized search phrases for comprehensive information retrieval.
 
 **STEP 1: INTENT CLASSIFICATION**
 For each query, first classify its intent:
@@ -167,44 +167,54 @@ For each query, first classify its intent:
 - **COMPARATIVE**: Comparison between options (X vs Y, differences between)
 - **ANALYTICAL**: Understanding relationships or implications (Why X?, What causes Y?)
 
-**STEP 2: STRATEGIC DECOMPOSITION (MAX 4-5 QUERIES)**
-Based on intent, select ONLY the most critical decomposition elements:
+**STEP 2: DECOMPOSITION STRATEGY**
+Based on intent, apply appropriate decomposition:
 
-**1. FACTUAL Queries:** 
-   * *Core Definition + Key Context + Primary Limitation*
-   * *Example:* "What is the waiting period for cataract surgery?" -> `["waiting period for cataract surgery", "cataract surgery coverage requirements", "exceptions to waiting periods"]`
+**1. FACTUAL Queries:** Keep simple if single fact, decompose if multiple facts needed.
+   * *Simple:* "What is the waiting period for cataract surgery?" -> `["waiting period for cataract surgery"]`
+   * *Complex:* "What are the limits and exclusions for dental treatment?" -> `["dental treatment coverage limits", "dental treatment exclusions", "dental procedure waiting periods"]`
 
-**2. PROCEDURAL Queries:** 
-   * *Main Process + Requirements + Key Exceptions*
-   * *Example:* "How do I file a claim?" -> `["claim filing process steps", "required documents for claims", "claim submission timeline", "common claim filing issues"]`
+**2. PROCEDURAL Queries:** Break into process steps + requirements + exceptions.
+   * *Example:* "How do I file a claim?" -> `["claim filing process steps", "required documents for claims", "claim submission timeline", "claim processing exceptions"]`
 
-**3. CONDITIONAL Queries:** 
-   * *Condition Definition + Coverage Rules + Key Exclusions*
-   * *Example:* "If I'm hospitalized for 2 days, what's covered?" -> `["minimum hospitalization coverage requirements", "short-term hospitalization benefits", "hospitalization exclusions", "definition of eligible hospitalization"]`
+**3. CONDITIONAL Queries:** Decompose into condition + outcomes + exceptions + definitions.
+   * *Example:* "If I'm hospitalized for 2 days, what's covered?" -> `["minimum hospitalization duration requirements", "coverage for short-term hospitalization", "exclusions for brief hospital stays", "definition of eligible hospitalization"]`
 
-**4. COMPARATIVE Queries:** 
-   * *Component A + Component B + Key Differences + Decision Factors*
-   * *Example:* "What's the difference between Plan A and Plan B?" -> `["Plan A key benefits", "Plan B key benefits", "Plan A vs Plan B comparison", "plan selection criteria"]`
+**4. COMPARATIVE Queries:** Break into individual components for comparison.
+   * *Example:* "What's the difference between Plan A and Plan B benefits?" -> `["Plan A coverage benefits", "Plan B coverage benefits", "Plan A vs Plan B comparison", "differences in plan benefits"]`
 
-**5. ANALYTICAL Queries:** 
-   * *Primary Cause + Main Effects + Context + Resolution*
-   * *Example:* "Why was my claim rejected?" -> `["common claim rejection reasons", "claim assessment criteria", "policy exclusions", "claim appeal process"]`
+**5. ANALYTICAL Queries:** Decompose into cause + effect + context + exceptions.
+   * *Example:* "Why was my claim rejected?" -> `["common claim rejection reasons", "claim assessment criteria", "policy exclusions", "claim documentation requirements"]`
 
-**PRIORITIZATION PRINCIPLES:**
-1. **Core Information**: The main definition/process/fact
-2. **Essential Context**: Critical qualifying information 
-3. **Key Limitations**: Most important exceptions/exclusions
-4. **Practical Application**: How it applies in real scenarios
-5. **Resolution/Next Steps**: What to do with the information
+**ENHANCED CONTEXT GENERATION:**
+For ANY query, always include:
+- **Definitions** of key terms mentioned
+- **Prerequisites** or conditions that apply
+- **Exceptions** or limitations
+- **Related processes** that might affect the answer
+- **Cross-references** to connected topics
 
-**QUALITY OVER QUANTITY:**
-- Select only the 4-5 most essential queries that provide 80% of needed information
-- Prioritize queries that resolve the most common ambiguities
-- Focus on actionable and definitive information
-- Avoid redundant or overly specific variations
+**DISAMBIGUATION FOCUS:**
+- Resolve ambiguous pronouns (it, this, that, they)
+- Clarify context-dependent terms
+- Include related concepts that provide complete understanding
+- Address potential misinterpretations
+
+**RELATIONSHIP AWARENESS:**
+- Include queries that find connected information
+- Search for cause-effect relationships
+- Look for procedural dependencies
+- Find conditional variations
+
+**OPTIMIZATION PRINCIPLES:**
+* **Intent-Driven**: Tailor decomposition to query intent
+* **Context-Complete**: Ensure all necessary context is captured
+* **Disambiguation-Ready**: Include terms that resolve ambiguities
+* **Relationship-Aware**: Connect related concepts and processes
+
 
 **Input Format:** A JSON list of strings, where each string is a user query.
-**Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains EXACTLY 4-5 decomposed parts.
+**Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts.
 
 **Input:**
 {json.dumps(queries, ensure_ascii=False)}
