@@ -4,12 +4,13 @@ import aiofiles
 import os
 from typing import List, Tuple, Optional, Dict, Any
 
-async def find_similar_questions(new_questions: List[str], qa_file_path: str = "questions_answers.jsonl", threshold: int = 90) -> Dict[str, Any]:
+async def find_similar_questions(new_questions: List[str], document_url: str, qa_file_path: str = "questions_answers.jsonl", threshold: int = 90) -> Dict[str, Any]:
     """
-    Find similar questions in the stored Q&A data.
+    Find similar questions in the stored Q&A data for a specific document.
     
     Args:
         new_questions (List[str]): List of new questions to search for
+        document_url (str): URL of the document being processed
         qa_file_path (str): Path to the questions_answers.jsonl file
         threshold (int): Minimum similarity score (0-100) to consider a match
         
@@ -19,6 +20,7 @@ async def find_similar_questions(new_questions: List[str], qa_file_path: str = "
         - 'matched_questions': List[Dict] - List of matched questions with their answers
         - 'unmatched_questions': List[str] - List of questions that didn't find matches
         - 'similarity_scores': Dict[str, int] - Similarity scores for each question
+        - 'document_matched': bool - Whether the document was found in stored data
     """
     
     if not os.path.exists(qa_file_path):
@@ -26,7 +28,8 @@ async def find_similar_questions(new_questions: List[str], qa_file_path: str = "
             'found_similar': False,
             'matched_questions': [],
             'unmatched_questions': new_questions,
-            'similarity_scores': {}
+            'similarity_scores': {},
+            'document_matched': False
         }
     
     try:
@@ -44,19 +47,45 @@ async def find_similar_questions(new_questions: List[str], qa_file_path: str = "
                     except json.JSONDecodeError:
                         continue
         
+        # Step 1: Find the document in stored data
+        document_matched = False
+        document_qa_entries = []
+        
+        for qa_entry in stored_qa_data:
+            stored_doc_url = qa_entry.get('document_url', '')
+            stored_doc_name = qa_entry.get('document_name', '')
+            
+            # Check if this is the same document (exact URL match or document name match)
+            if stored_doc_url == document_url or stored_doc_name in document_url or document_url in stored_doc_url:
+                document_matched = True
+                document_qa_entries.append(qa_entry)
+        
+        if not document_matched:
+            print(f"📄 Document not found in stored data: {document_url}")
+            return {
+                'found_similar': False,
+                'matched_questions': [],
+                'unmatched_questions': new_questions,
+                'similarity_scores': {},
+                'document_matched': False
+            }
+        
+        print(f"📄 Found {len(document_qa_entries)} Q&A entries for document: {document_url}")
+        
+        # Step 2: Find similar questions within the matched document
         matched_questions = []
         unmatched_questions = []
         similarity_scores = {}
         
-        # For each new question, find the best match in stored data
+        # For each new question, find the best match in the document's stored data
         for new_question in new_questions:
             best_match = None
             best_score = 0
             best_answer = None
             best_document = None
             
-            # Search through all stored Q&A entries
-            for qa_entry in stored_qa_data:
+            # Search through all Q&A entries for this specific document
+            for qa_entry in document_qa_entries:
                 stored_questions = qa_entry.get('questions', [])
                 stored_answers = qa_entry.get('answers', [])
                 
@@ -78,6 +107,7 @@ async def find_similar_questions(new_questions: List[str], qa_file_path: str = "
                     'matched_question': best_match,
                     'answer': best_answer,
                     'document_name': best_document,
+                    'document_url': document_url,
                     'similarity_score': best_score
                 })
             else:
@@ -87,7 +117,8 @@ async def find_similar_questions(new_questions: List[str], qa_file_path: str = "
             'found_similar': len(matched_questions) > 0,
             'matched_questions': matched_questions,
             'unmatched_questions': unmatched_questions,
-            'similarity_scores': similarity_scores
+            'similarity_scores': similarity_scores,
+            'document_matched': document_matched
         }
         
     except Exception as e:
@@ -96,7 +127,8 @@ async def find_similar_questions(new_questions: List[str], qa_file_path: str = "
             'found_similar': False,
             'matched_questions': [],
             'unmatched_questions': new_questions,
-            'similarity_scores': {}
+            'similarity_scores': {},
+            'document_matched': False
         }
 
 def get_answers_for_matched_questions(matched_questions: List[Dict[str, Any]]) -> List[str]:
@@ -117,7 +149,7 @@ def get_answers_for_matched_questions(matched_questions: List[Dict[str, Any]]) -
 async def test_similarity_search():
     """Test the similarity search functionality"""
     
-    # Sample test questions
+    # Sample test questions and document URL
     test_questions = [
         "What is the main topic of this document?",
         "What are the key features mentioned?",
@@ -126,10 +158,14 @@ async def test_similarity_search():
         "If my car is stolen, what case will it be in law?"   # Should match existing data
     ]
     
-    print("🔍 Testing similarity search...")
-    result = await find_similar_questions(test_questions, threshold=90)
+    # Test with a document URL that exists in the stored data
+    test_document_url = "https://hackrx.blob.core.windows.net/assets/principia_newton.pdf?sv=2023-01-03&st=2025-07-28T07%3A20%3A32Z&se=2026-07-29T07%3A20%3A00Z&sr=b&sp=r&sig=V5I1QYyigoxeUMbnUKsdEaST99F5%2FDfo7wpKg9XXF5w%3D"
+    
+    print("🔍 Testing similarity search with document context...")
+    result = await find_similar_questions(test_questions, test_document_url, threshold=90)
     
     print(f"\n📊 Similarity Search Results:")
+    print(f"Document matched: {result['document_matched']}")
     print(f"Found similar questions: {result['found_similar']}")
     print(f"Matched questions: {len(result['matched_questions'])}")
     print(f"Unmatched questions: {len(result['unmatched_questions'])}")
