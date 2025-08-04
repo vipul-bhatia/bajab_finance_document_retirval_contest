@@ -4,7 +4,7 @@ import aiofiles
 import os
 from typing import List, Tuple, Optional, Dict, Any
 
-async def find_similar_questions(new_questions: List[str], document_url: str, qa_file_path: str = "questions_answers.jsonl", threshold: int = 90) -> Dict[str, Any]:
+async def find_similar_questions(new_questions: List[str], document_url: str, qa_file_path: str = "questions_answers.jsonl", threshold: int = 100) -> Dict[str, Any]:
     """
     Find similar questions in the stored Q&A data for a specific document.
     
@@ -162,7 +162,7 @@ async def test_similarity_search():
     test_document_url = "https://hackrx.blob.core.windows.net/assets/principia_newton.pdf?sv=2023-01-03&st=2025-07-28T07%3A20%3A32Z&se=2026-07-29T07%3A20%3A00Z&sr=b&sp=r&sig=V5I1QYyigoxeUMbnUKsdEaST99F5%2FDfo7wpKg9XXF5w%3D"
     
     print("🔍 Testing similarity search with document context...")
-    result = await find_similar_questions(test_questions, test_document_url, threshold=90)
+    result = await find_similar_questions(test_questions, test_document_url, threshold=100)
     
     print(f"\n📊 Similarity Search Results:")
     print(f"Document matched: {result['document_matched']}")
