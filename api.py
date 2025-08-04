@@ -99,7 +99,7 @@ async def process_document_and_questions(
         print(f"🔍 Step 0: Checking for similar questions in stored data...")
         similarity_start = time.time()
         
-        similarity_result = await find_similar_questions(request.questions, str(request.documents), threshold=90)
+        similarity_result = await find_similar_questions(request.questions, str(request.documents), threshold=100)
         similarity_time = time.time() - similarity_start
         
         if similarity_result['found_similar']:
