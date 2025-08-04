@@ -13,8 +13,12 @@ from pydantic import BaseModel, HttpUrl
 from typing import List
 import time
 import traceback
+import json
+import aiofiles
+from datetime import datetime
 
 from src.document_manager import DocumentManager
+from src.search.similarity_search import find_similar_questions, get_answers_for_matched_questions
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -47,6 +51,31 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Security(secu
             headers={"WWW-Authenticate": "Bearer"},
         )
     return credentials.credentials
+
+async def save_questions_answers(questions: List[str], answers: List[str], document_name: str, document_url: str):
+    """
+    Save questions and answers to a separate JSON file for permanent storage
+    """
+    try:
+        qa_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "document_name": document_name,
+            "document_url": document_url,
+            "questions": questions,
+            "answers": answers
+        }
+        
+        qa_file = "questions_answers.jsonl"
+        
+        async with aiofiles.open(qa_file, mode='a') as f:
+            await f.write(json.dumps(qa_entry) + '\n')
+            
+        print(f"✅ Questions and answers saved to {qa_file}")
+        
+    except Exception as qa_error:
+        # Log error but don't fail the request
+        print(f"Warning: Failed to save questions and answers: {qa_error}")
+
 @app.post("/api/v1/hackrx/run", response_model=AnswersResponse)
 async def process_document_and_questions(
     request: DocumentQuery,
@@ -64,8 +93,52 @@ async def process_document_and_questions(
     total_start_time = time.time()
     
     try:
-        # Initialize document manager
         print(f"🚀 Starting document processing pipeline...")
+        
+        # Step 0: Check for similar questions in stored data
+        print(f"🔍 Step 0: Checking for similar questions in stored data...")
+        similarity_start = time.time()
+        
+        similarity_result = await find_similar_questions(request.questions, threshold=90)
+        similarity_time = time.time() - similarity_start
+        
+        if similarity_result['found_similar']:
+            print(f"✅ Found {len(similarity_result['matched_questions'])} similar questions!")
+            
+            # If all questions have matches, return cached answers
+            if len(similarity_result['matched_questions']) == len(request.questions):
+                print(f"🎯 All questions matched! Returning cached answers.")
+                
+                # Extract answers in the correct order
+                cached_answers = []
+                for question in request.questions:
+                    for match in similarity_result['matched_questions']:
+                        if match['new_question'] == question:
+                            cached_answers.append(match['answer'])
+                            break
+                
+                total_time = time.time() - total_start_time
+                print(f"🏁 Similarity search completed in {similarity_time:.2f}s")
+                print(f"🏁 Total pipeline time: {total_time:.2f}s")
+                
+                # Log the similarity search results
+                print(f"\n📊 SIMILARITY SEARCH RESULTS:")
+                for match in similarity_result['matched_questions']:
+                    print(f"   • '{match['new_question']}' → '{match['matched_question']}' ({match['similarity_score']}%)")
+                
+                return AnswersResponse(answers=cached_answers)
+            
+            # If some questions have matches, process only unmatched questions
+            else:
+                print(f"🔄 Processing {len(similarity_result['unmatched_questions'])} new questions...")
+                questions_to_process = similarity_result['unmatched_questions']
+                cached_answers = get_answers_for_matched_questions(similarity_result['matched_questions'])
+        else:
+            print(f"❌ No similar questions found. Processing all {len(request.questions)} questions...")
+            questions_to_process = request.questions
+            cached_answers = []
+        
+        # Initialize document manager
         document_manager = DocumentManager()
         
         # Step 1: Download and process document
@@ -94,11 +167,14 @@ async def process_document_and_questions(
         doc_info = document_manager.get_document_info()
         print(f"📄 Document ready: {doc_info['chunk_count']} chunks loaded")
         
-        # Step 3: Process all questions in parallel
+        # Step 3: Process unmatched questions
         query_start = time.time()
-        print(f"🎯 Step 2: Processing {len(request.questions)} questions...")
-        answers = document_manager.process_multiple_queries(request.questions)
+        print(f"🎯 Step 2: Processing {len(questions_to_process)} new questions...")
+        new_answers = document_manager.process_multiple_queries(questions_to_process)
         query_time = time.time() - query_start
+        
+        # Combine cached and new answers
+        all_answers = cached_answers + new_answers
         
         total_time = time.time() - total_start_time
         
@@ -107,6 +183,7 @@ async def process_document_and_questions(
         
         # Print comprehensive timing summary
         print(f"\n📊 COMPREHENSIVE TIMING SUMMARY:")
+        print(f"   • Similarity Search: {similarity_time:.2f}s")
         print(f"   • Document Download & Processing: {timing_data.get('download_and_processing', 0):.2f}s")
         if 'embedding_generation' in timing_data:
             print(f"   • Embedding Generation: {timing_data['embedding_generation']:.2f}s")
@@ -115,20 +192,29 @@ async def process_document_and_questions(
         print(f"   • Query Processing: {query_time:.2f}s")
         print(f"   • Total Pipeline: {total_time:.2f}s")
         
-        # Log request details to file asynchronously
+        # Print similarity search results if any matches were found
+        if similarity_result['found_similar']:
+            print(f"\n📊 SIMILARITY SEARCH RESULTS:")
+            for match in similarity_result['matched_questions']:
+                print(f"   • '{match['new_question']}' → '{match['matched_question']}' ({match['similarity_score']}%)")
+        
+        # Save questions and answers to separate JSON file (only for new questions)
+        if questions_to_process:
+            await save_questions_answers(questions_to_process, new_answers, document_name, str(request.documents))
+        
+        # Log request details to file asynchronously (existing logic - unchanged)
         try:
-            from datetime import datetime
-            import aiofiles
-            
             log_entry = {
                 "timestamp": datetime.now().isoformat(),
                 "document_name": document_name,
                 "document_url": str(request.documents),
                 "questions": request.questions,
-                "answers": answers
+                "answers": all_answers,
+                "similarity_search_used": similarity_result['found_similar'],
+                "cached_answers_count": len(cached_answers),
+                "new_answers_count": len(new_answers)
             }
             
-            import json
             log_file = "request_logs.jsonl"
             
             async with aiofiles.open(log_file, mode='a') as f:
@@ -138,7 +224,7 @@ async def process_document_and_questions(
             # Log error but don't fail the request
             print(f"Warning: Failed to log request details: {log_error}")
         
-        return AnswersResponse(answers=answers)
+        return AnswersResponse(answers=all_answers)
     except HTTPException:
         raise
     except Exception as e:
@@ -164,8 +250,40 @@ async def root():
         "endpoints": {
             "POST /api/v1/hackrx/run": "Main endpoint for document processing and question answering",
             "GET /health": "Health check endpoint",
+            "GET /qa": "Retrieve all stored questions and answers",
             "GET /docs": "Interactive API documentation"
         }
     }
+
+@app.get("/qa")
+async def get_questions_answers():
+    """Retrieve all stored questions and answers"""
+    try:
+        qa_file = "questions_answers.jsonl"
+        qa_data = []
+        
+        if os.path.exists(qa_file):
+            async with aiofiles.open(qa_file, mode='r') as f:
+                content = await f.read()
+                lines = content.strip().split('\n')
+                
+                for line in lines:
+                    if line.strip() and not line.startswith('#'):
+                        try:
+                            qa_entry = json.loads(line)
+                            qa_data.append(qa_entry)
+                        except json.JSONDecodeError:
+                            continue
+        
+        return {
+            "total_entries": len(qa_data),
+            "questions_answers": qa_data
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving questions and answers: {str(e)}"
+        )
 
 # Note: Use main.py to run the server with proper reload functionality 
