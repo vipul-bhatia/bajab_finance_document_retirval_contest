@@ -99,7 +99,7 @@ async def process_document_and_questions(
         print(f"🔍 Step 0: Checking for similar questions in stored data...")
         similarity_start = time.time()
         
-        similarity_result = await find_similar_questions(request.questions, threshold=90)
+        similarity_result = await find_similar_questions(request.questions, str(request.documents), threshold=90)
         similarity_time = time.time() - similarity_start
         
         if similarity_result['found_similar']:
@@ -134,7 +134,10 @@ async def process_document_and_questions(
                 questions_to_process = similarity_result['unmatched_questions']
                 cached_answers = get_answers_for_matched_questions(similarity_result['matched_questions'])
         else:
-            print(f"❌ No similar questions found. Processing all {len(request.questions)} questions...")
+            if similarity_result['document_matched']:
+                print(f"❌ Document found but no similar questions. Processing all {len(request.questions)} questions...")
+            else:
+                print(f"❌ Document not found in stored data. Processing all {len(request.questions)} questions...")
             questions_to_process = request.questions
             cached_answers = []
         
