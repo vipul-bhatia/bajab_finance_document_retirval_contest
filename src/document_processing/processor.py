@@ -11,6 +11,8 @@ import time
 import email
 import extract_msg
 
+import zipfile
+
 class DocumentProcessor:
     """Handles document loading and chunking operations"""
     
@@ -105,6 +107,10 @@ class DocumentProcessor:
                 content_type = response.headers.get('content-type', '').lower()
                 if 'pdf' in content_type:
                     file_extension = 'pdf'
+                elif 'zip' in content_type:
+                    file_extension = 'zip'
+                elif 'image' in content_type:
+                    file_extension = content_type.split('/')[-1]
                 else:
                     file_extension = 'pdf'  # Default to PDF
             
@@ -155,6 +161,10 @@ class DocumentProcessor:
                 content_type = response.headers.get('content-type', '').lower()
                 if 'pdf' in content_type:
                     file_extension = 'pdf'
+                elif 'zip' in content_type:
+                    file_extension = 'zip'
+                elif 'image' in content_type:
+                    file_extension = content_type.split('/')[-1]
                 else:
                     file_extension = 'pdf'  # Default to PDF
 
@@ -223,6 +233,42 @@ class DocumentProcessor:
                     msg.close()
                 finally:
                     os.unlink(temp_path)  # Clean up temp file
+            elif file_extension == 'pptx':
+                from pptx import Presentation
+                import io
+                prs = Presentation(io.BytesIO(file_bytes))
+                for slide in prs.slides:
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text"):
+                            content += shape.text + "\n\n"
+            elif file_extension == 'xlsx':
+                import openpyxl
+                import io
+                workbook = openpyxl.load_workbook(io.BytesIO(file_bytes))
+                for sheet_name in workbook.sheetnames:
+                    sheet = workbook[sheet_name]
+                    for row in sheet.iter_rows():
+                        for cell in row:
+                            if cell.value:
+                                content += str(cell.value) + " "
+                        content += "\n\n"
+                    content += "\n\n"
+            elif file_extension in ['png', 'jpg', 'jpeg', 'bmp', 'tiff']:
+                import pytesseract
+                from PIL import Image
+                import io
+                image = Image.open(io.BytesIO(file_bytes))
+                content = pytesseract.image_to_string(image)
+            elif file_extension == 'zip':
+                with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                    for filename in z.namelist():
+                        with z.open(filename) as f:
+                            file_content = f.read()
+                            file_ext = os.path.splitext(filename)[1].lower().replace('.', '')
+                            content += "\n\n--- New File: " + filename + " ---\n\n"
+                            # Recursively process the file
+                            chunks = DocumentProcessor.load_document_from_memory(file_content, file_ext, chunk_size)
+                            content += "\n".join(chunks)
             else:
                 raise ValueError(f"Unsupported file format for memory loading: {file_extension}")
             chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
