@@ -2,7 +2,7 @@ import concurrent.futures
 import time
 from typing import List, Dict, Any
 import json
-import google.generativeai as genai
+import openai
 
 
 class QueryAnalyzer:
@@ -10,9 +10,9 @@ class QueryAnalyzer:
     
     def __init__(self):
         # Initialize OpenAI client - API key should be set in environment variables
-        # self.client = openai.OpenAI()
-        # self.model = "gpt-4.1-mini-2025-04-14"
-        self.model = genai.GenerativeModel('gemini-1.5-pro')
+        self.client = openai.OpenAI()
+        self.model = "gpt-4.1-mini-2025-04-14"
+        # self.model = genai.GenerativeModel('gemini-1.5-pro')
     
     def _retry_with_backoff(self, func, max_retries=2, backoff_factor=1):
         """
@@ -81,18 +81,18 @@ User Query: "{query}"
 **Your Response:**"""
 
         def _make_api_call():
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
-            # response = self.client.chat.completions.create(
-            #     model=self.model,
-            #     messages=[
-            #         {"role": "system", "content": "You are an expert query analyzer for document search systems."},
-            #         {"role": "user", "content": prompt}
-            #     ],
-            #     max_tokens=500,
-            #     temperature=0.1
-            # )
-            # return response.choices[0].message.content.strip()
+            # response = self.model.generate_content(prompt)
+            # return response.text.strip()
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert query analyzer for document search systems."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500,
+                temperature=0.1
+            )
+            return response.choices[0].message.content.strip()
 
         try:
             response_text = self._retry_with_backoff(_make_api_call)
@@ -223,20 +223,20 @@ For ANY query, always include:
 """
         
         def _make_batch_api_call():
-            response = self.model.generate_content(prompt)
-            response_text = response.text.strip()
-            # response = self.client.chat.completions.create(
-            #     model=self.model,
-            #     messages=[
-            #         {"role": "system", "content": "You are an expert query analyzer for document search systems. Always respond with valid JSON."},
-            #         {"role": "user", "content": prompt}
-            #     ],
-            #     max_tokens=2000,
-            #     temperature=0.1
-            # )
-            # response_text = response.choices[0].message.content.strip()
+            # response = self.model.generate_content(prompt)
+            # response_text = response.text.strip()
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert query analyzer for document search systems. Always respond with valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=2000,
+                temperature=0.1
+            )
+            response_text = response.choices[0].message.content.strip()
 
-            print("\n📥 DEBUG: Raw response from Gemini:")
+            print("📥 DEBUG: Raw response from OpenAI:")
             print(f"{'='*50}")
             print(response_text)
             print(f"{'='*50}")
