@@ -77,6 +77,17 @@ async def save_questions_answers(questions: List[str], answers: List[str], docum
         # Log error but don't fail the request
         print(f"Warning: Failed to save questions and answers: {qa_error}")
 
+async def log_request(log_entry: dict):
+    """
+    Asynchronously write a log entry to the request log file.
+    """
+    try:
+        log_file = "request_logs.jsonl"
+        async with aiofiles.open(log_file, mode='a') as f:
+            await f.write(json.dumps(log_entry) + '\n')
+    except Exception as log_error:
+        print(f"Warning: Failed to log request details: {log_error}")
+
 @app.post("/api/v1/hackrx/run", response_model=AnswersResponse)
 async def process_document_and_questions(
     request: DocumentQuery,
@@ -103,6 +114,18 @@ async def process_document_and_questions(
         similarity_result = await find_similar_questions(request.questions, str(request.documents), threshold=100)
         similarity_time = time.time() - similarity_start
         
+        # Always log the request, regardless of cache hit or miss
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "document_url": str(request.documents),
+            "questions": request.questions,
+            "answers": [],  # Placeholder, will be filled later
+            "similarity_search_used": similarity_result['found_similar'],
+            "cached_answers_count": 0,
+            "new_answers_count": 0,
+            "document_name": "" # Placeholder
+        }
+
         if similarity_result['found_similar']:
             print(f"✅ Found {len(similarity_result['matched_questions'])} similar questions!")
             
@@ -129,7 +152,15 @@ async def process_document_and_questions(
                 # Log the similarity search results
                 print(f"\n📊 SIMILARITY SEARCH RESULTS:")
                 for match in similarity_result['matched_questions']:
-                    print(f"   • '{match['new_question']}' → '{match['matched_question']}' ({match['similarity_score']}%)")
+                    print(f"   • '{match['new_question']}' → '{match['matched_question']}' ({match['similarity_score']}%) ")
+                
+                # Update log entry for cached response
+                log_entry["answers"] = cached_answers
+                log_entry["cached_answers_count"] = len(cached_answers)
+                if similarity_result['matched_questions']:
+                    log_entry["document_name"] = similarity_result['matched_questions'][0].get('document_name', 'Unknown')
+                
+                await log_request(log_entry)
                 
                 return AnswersResponse(answers=cached_answers)
             
@@ -164,6 +195,7 @@ async def process_document_and_questions(
             )
         
         download_time = time.time() - download_start
+        log_entry["document_name"] = document_name
         
         # Get detailed timing from document manager
         if hasattr(document_manager, 'timing_data'):
@@ -204,33 +236,17 @@ async def process_document_and_questions(
         if similarity_result['found_similar']:
             print(f"\n📊 SIMILARITY SEARCH RESULTS:")
             for match in similarity_result['matched_questions']:
-                print(f"   • '{match['new_question']}' → '{match['matched_question']}' ({match['similarity_score']}%)")
+                print(f"   • '{match['new_question']}' → '{match['matched_question']}' ({match['similarity_score']}%) ")
         
         # Save questions and answers to separate JSON file (only for new questions)
         if questions_to_process:
             await save_questions_answers(questions_to_process, new_answers, document_name, str(request.documents))
         
-        # Log request details to file asynchronously (existing logic - unchanged)
-        try:
-            log_entry = {
-                "timestamp": datetime.now().isoformat(),
-                "document_name": document_name,
-                "document_url": str(request.documents),
-                "questions": request.questions,
-                "answers": all_answers,
-                "similarity_search_used": similarity_result['found_similar'],
-                "cached_answers_count": len(cached_answers),
-                "new_answers_count": len(new_answers)
-            }
-            
-            log_file = "request_logs.jsonl"
-            
-            async with aiofiles.open(log_file, mode='a') as f:
-                await f.write(json.dumps(log_entry) + '\n')
-                
-        except Exception as log_error:
-            # Log error but don't fail the request
-            print(f"Warning: Failed to log request details: {log_error}")
+        # Update and write the final log entry
+        log_entry["answers"] = all_answers
+        log_entry["cached_answers_count"] = len(cached_answers)
+        log_entry["new_answers_count"] = len(new_answers)
+        await log_request(log_entry)
         
         return AnswersResponse(answers=all_answers)
     except HTTPException:
