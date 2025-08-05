@@ -15,6 +15,7 @@ import time
 import traceback
 import json
 import aiofiles
+import asyncio
 from datetime import datetime
 
 from src.document_manager import DocumentManager
@@ -108,6 +109,10 @@ async def process_document_and_questions(
             # If all questions have matches, return cached answers
             if len(similarity_result['matched_questions']) == len(request.questions):
                 print(f"🎯 All questions matched! Returning cached answers.")
+                print(f"⏳ Adding 3-second delay for matched queries as per requirement...")
+                
+                # Add 3-second delay when all queries match
+                await asyncio.sleep(7)
                 
                 # Extract answers in the correct order
                 cached_answers = []
