@@ -98,7 +98,7 @@ Retrieved Information:
 
 * Reads smoothly on its own.
 
-
+* When answering arithmetic questions, follow the exact calculation method shown in the chunks and context, even if it differs from standard mathematics , if no imformation is provided in chunks do normal calculation according to standard maths(Exmaple - 1 + 1 = 2). Use the same pattern or rule demonstrated, without explaining(critical no need for explanation) or correcting the approach.
 
 Example Query: "What is the grace period for premium payment?"
 
