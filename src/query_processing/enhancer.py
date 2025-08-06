@@ -86,7 +86,7 @@ Retrieved Information:
 
 7. **Clear Tone and Professional Phrasing:** Write the answer in a clear, straightforward manner.
 
-* **Forbidden Phrases:** **Do not** use introductory phrases that refer to the sources, such as "The provided text states..." or "According to the sources...".
+* **Strictly Forbidden Phrases:** **Do not** use introductory phrases that refer to the sources or the chunks, such as "The provided text states..." or "According to the sources..." or "According to chunk 43". Mentioning about the source or chunk number in the answer is strictly forbidden.
 
 8. **Final Self-Check:** Before providing the answer, verify that it:
 
@@ -114,8 +114,7 @@ Example 3: “If I change my religion, can the government stop me?”
 
 ✅ Good Answer: "Under Article 25, every person has the freedom of conscience and the right to freely profess, practice, and propagate religion, subject to public order, morality, and health."
 
-❌ Poor Answer(uses special characters): "Under /Article 25/, every person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health."
-
+❌ Poor Answer(uses special characters, mentions the source): "Under /Article 25/, every person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health.(Chunk 43)"
 
 Your response:
 
