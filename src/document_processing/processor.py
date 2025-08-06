@@ -257,13 +257,78 @@ class DocumentProcessor:
                 finally:
                     os.unlink(temp_path)  # Clean up temp file
             elif file_extension == 'pptx':
-                from pptx import Presentation
-                import io
-                prs = Presentation(io.BytesIO(file_bytes))
-                for slide in prs.slides:
-                    for shape in slide.shapes:
-                        if hasattr(shape, "text"):
-                            content += shape.text + "\n\n"
+                # Use the same logic as a.py: PPTX → PDF → Images → OpenAI Vision
+                import tempfile
+                import subprocess
+                import base64
+                from pdf2image import convert_from_path
+                from openai import OpenAI
+                
+                # Create temporary directory for processing
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    # Step 1: Write PPTX bytes to temporary file
+                    pptx_temp_path = os.path.join(temp_dir, "temp.pptx")
+                    with open(pptx_temp_path, "wb") as f:
+                        f.write(file_bytes)
+                    
+                    # Step 2: Convert PPTX → PDF via LibreOffice
+                    try:
+                        subprocess.run([
+                            "soffice", "--headless",
+                            "--convert-to", "pdf",
+                            "--outdir", temp_dir,
+                            pptx_temp_path
+                        ], check=True, capture_output=True)
+                        
+                        # Step 3: Locate the generated PDF
+                        pdf_path = os.path.join(temp_dir, "temp.pdf")
+                        if not os.path.exists(pdf_path):
+                            raise FileNotFoundError(f"Expected PDF at {pdf_path}")
+                        
+                        # Step 4: Convert PDF pages to images
+                        slides = convert_from_path(pdf_path, dpi=200)
+                        
+                        # Step 5: Use OpenAI to extract text from each slide image
+                        client = OpenAI()
+                        
+                        for idx, img in enumerate(slides, start=1):
+                            # Save image to temp file
+                            img_path = os.path.join(temp_dir, f"slide_{idx}.png")
+                            img.save(img_path, "PNG")
+                            
+                            # Encode image to base64
+                            with open(img_path, "rb") as f:
+                                encoded = base64.b64encode(f.read()).decode("utf-8")
+                            data_url = f"data:image/png;base64,{encoded}"
+                            
+                            # Use OpenAI to extract text
+                            try:
+                                response = client.chat.completions.create(
+                                    model="gpt-4o",
+                                    messages=[{
+                                        "role": "user",
+                                        "content": [
+                                            {"type": "text", "text": "Please extract the text from the image as is. Do not summarize or paraphrase. If no text present, then summarize the image in 2 lines."},
+                                            {"type": "image_url", "image_url": {"url": data_url}},
+                                        ],
+                                    }],
+                                )
+                                slide_text = response.choices[0].message.content
+                                content += f"--- Slide {idx} ---\n{slide_text}\n\n"
+                            except Exception as e:
+                                print(f"Warning: Could not process slide {idx} with OpenAI: {e}")
+                                content += f"--- Slide {idx} ---\n[Could not extract text]\n\n"
+                                
+                    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                        # Fallback to basic pptx processing if LibreOffice/pdf2image fails
+                        print(f"Warning: PPTX processing failed with OpenAI method: {e}")
+                        print("Falling back to basic pptx processing...")
+                        from pptx import Presentation
+                        prs = Presentation(io.BytesIO(file_bytes))
+                        for slide in prs.slides:
+                            for shape in slide.shapes:
+                                if hasattr(shape, "text"):
+                                    content += shape.text + "\n\n"
             elif file_extension == 'xlsx':
                 import openpyxl
                 import io
