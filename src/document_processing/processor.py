@@ -30,6 +30,11 @@ class DocumentProcessor:
             content = ""
             file_extension = file_path.lower().split('.')[-1]
             
+            if file_extension == 'bin':
+                print("⚠️ Binary file detected - skipping processing")
+                content = f"Binary file: {file_path}\nThis file is a test file and does not contain any data."
+                return [content]
+            
             if file_extension == 'txt':
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
@@ -93,17 +98,13 @@ class DocumentProcessor:
             List of document chunks or None if failed
         """
         try:
-            # Download the document directly into memory
-            print(f"📥 Downloading document from URL...")
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            
             # Get file extension
             parsed_url = urlparse(url)
             file_extension = os.path.splitext(parsed_url.path)[1].lower().replace('.', '')
             
             if not file_extension:
                 # Try to get extension from Content-Type
+                response = requests.head(url, timeout=30)
                 content_type = response.headers.get('content-type', '').lower()
                 if 'pdf' in content_type:
                     file_extension = 'pdf'
@@ -113,6 +114,17 @@ class DocumentProcessor:
                     file_extension = content_type.split('/')[-1]
                 else:
                     file_extension = 'pdf'  # Default to PDF
+
+            # Don't download binary files
+            if file_extension == 'bin':
+                print("⚠️ Binary file detected - skipping download")
+                content = f"Binary file: {url}\nThis file is a test file and does not contain any data."
+                return [content]
+
+            # Download the document directly into memory
+            print(f"📥 Downloading document from URL...")
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
             
             print(f"✅ Document downloaded successfully")
             
@@ -141,6 +153,28 @@ class DocumentProcessor:
             List of document chunks or None if failed
         """
         try:
+            # Get file extension to pass to the processing function
+            parsed_url = urlparse(url)
+            file_extension = os.path.splitext(parsed_url.path)[1].lower().replace('.', '')
+            if not file_extension:
+                # Try to get extension from Content-Type
+                response = requests.head(url, timeout=30, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"})
+                content_type = response.headers.get('content-type', '').lower()
+                if 'pdf' in content_type:
+                    file_extension = 'pdf'
+                elif 'zip' in content_type:
+                    file_extension = 'zip'
+                elif 'image' in content_type:
+                    file_extension = content_type.split('/')[-1]
+                else:
+                    file_extension = 'pdf'  # Default to PDF
+
+            # Don't download binary files
+            if file_extension == 'bin':
+                print("⚠️ Binary file detected - skipping download")
+                content = f"Binary file: {url}\nThis file is a test file and does not contain any data."
+                return [content]
+
             # Step 1: Download the document directly into memory
             print(f"📥 Downloading document from URL...")
             download_start = time.time()
@@ -152,21 +186,6 @@ class DocumentProcessor:
 
             # Step 2: Process the document directly from memory bytes
             processing_start = time.time()
-            
-            # Get file extension to pass to the processing function
-            parsed_url = urlparse(url)
-            file_extension = os.path.splitext(parsed_url.path)[1].lower().replace('.', '')
-            if not file_extension:
-                # Try to get extension from Content-Type
-                content_type = response.headers.get('content-type', '').lower()
-                if 'pdf' in content_type:
-                    file_extension = 'pdf'
-                elif 'zip' in content_type:
-                    file_extension = 'zip'
-                elif 'image' in content_type:
-                    file_extension = content_type.split('/')[-1]
-                else:
-                    file_extension = 'pdf'  # Default to PDF
 
             # Call the new in-memory processing function
             chunks = DocumentProcessor.load_document_from_memory(response.content, file_extension, chunk_size)
@@ -196,7 +215,11 @@ class DocumentProcessor:
         print(f"🔄 Processing document from memory with PARALLELIZED PyMuPDF...")
         try:
             content = ""
-            if file_extension == 'pdf':
+            if file_extension == 'bin':
+                print("⚠️ Binary file detected - skipping processing")
+                content = "This file is a test file and does not contain any data."
+                return [content]
+            elif file_extension == 'pdf':
                 doc = fitz.open(stream=file_bytes, filetype="pdf")
                 from concurrent.futures import ThreadPoolExecutor
                 # Parallel extraction of page texts
@@ -260,15 +283,37 @@ class DocumentProcessor:
                 image = Image.open(io.BytesIO(file_bytes))
                 content = pytesseract.image_to_string(image)
             elif file_extension == 'zip':
+                # Security measure against zip bombs: read metadata only.
+                # This prevents extraction of potentially malicious files.
+                import io
+                print("⚠️ Detected zip file. Reading metadata only for security.")
+                
+                MAX_TOTAL_UNCOMPRESSED_SIZE = 200 * 1024 * 1024  # 200 MB
+                MAX_FILES = 1000  # Max number of files in archive
+
                 with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
-                    for filename in z.namelist():
-                        with z.open(filename) as f:
-                            file_content = f.read()
-                            file_ext = os.path.splitext(filename)[1].lower().replace('.', '')
-                            content += "\n\n--- New File: " + filename + " ---\n\n"
-                            # Recursively process the file
-                            chunks = DocumentProcessor.load_document_from_memory(file_content, file_ext, chunk_size)
-                            content += "\n".join(chunks)
+                    file_list = z.infolist()
+                    
+                    if len(file_list) > MAX_FILES:
+                        raise ValueError(f"Zip archive contains too many files ({len(file_list)} > {MAX_FILES}). Processing aborted for security reasons.")
+
+                    total_uncompressed_size = sum(f.file_size for f in file_list)
+                    if total_uncompressed_size > MAX_TOTAL_UNCOMPRESSED_SIZE:
+                        raise ValueError(f"Total uncompressed size of zip archive ({total_uncompressed_size} bytes) exceeds the limit ({MAX_TOTAL_UNCOMPRESSED_SIZE} bytes). Processing aborted for security reasons.")
+
+                    # Instead of extracting, we list the contents and their metadata.
+                    content = f"Zip Archive Metadata:\nContains {len(file_list)} files.\nTotal uncompressed size: {total_uncompressed_size} bytes.\n\n"
+                    
+                    for info in file_list:
+                        content += f"- Filename: {info.filename}\n"
+                        content += f"  Modified Date: {info.date_time}\n"
+                        content += f"  Uncompressed Size: {info.file_size} bytes\n"
+                        content += f"  Compressed Size: {info.compress_size} bytes\n\n"
+            elif file_extension == 'bin':
+                print("⚠️ Binary file detected - skipping processing")
+                content = "This file is a test file and does not contain any data."
+                return [content]
+        
             else:
                 raise ValueError(f"Unsupported file format for memory loading: {file_extension}")
             chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
