@@ -135,7 +135,7 @@ async def process_document_and_questions(
                 print(f"⏳ Adding 3-second delay for matched queries as per requirement...")
                 
                 # Add 3-second delay when all queries match
-                await asyncio.sleep(7)
+                await asyncio.sleep(6)
                 
                 # Extract answers in the correct order
                 cached_answers = []
