@@ -19,7 +19,6 @@ class QueryEnhancer:
         
         results_text = ""
         for i, result in enumerate(search_results, 1):
-            results_text += f"\n--- Chunk {result['chunk_index']} ---\n"
             results_text += f"Context: {result['text']}\n"
             if 'source_query' in result and result['source_query'] != query:
                 results_text += f"[Found via sub-query: '{result['source_query']}']\n"
@@ -86,7 +85,7 @@ Retrieved Information:
 
 7. **Clear Tone and Professional Phrasing:** Write the answer in a clear, straightforward manner.
 
-* **Strictly Forbidden Phrases:** **Do not** use introductory phrases that refer to the sources or the chunks, such as "The provided text states..." or "According to the sources..." or "According to chunk 43". Mentioning about the source or chunk number in the answer is strictly forbidden.
+* **Forbidden Phrases:** **Do not** use introductory phrases that refer to the sources, such as "The provided text states..." or "According to the sources...".
 
 8. **Final Self-Check:** Before providing the answer, verify that it:
 
@@ -114,7 +113,7 @@ Example 3: “If I change my religion, can the government stop me?”
 
 ✅ Good Answer: "Under Article 25, every person has the freedom of conscience and the right to freely profess, practice, and propagate religion, subject to public order, morality, and health."
 
-❌ Poor Answer(uses special characters, mentions the source): "Under /Article 25/, every person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health.(Chunk 43)"
+❌ Poor Answer(uses special characters): "Under /Article 25/, every person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health."
 
 Your response:
 
