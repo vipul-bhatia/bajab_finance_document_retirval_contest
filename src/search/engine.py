@@ -157,7 +157,7 @@ class SearchEngine:
                     search_futures.append((future, i, 'single'))
                 else:
                     # Multi-query parallel search
-                    future = executor.submit(self.query_analyzer.parallel_search, self, search_queries, 3)
+                    future = executor.submit(self.query_analyzer.parallel_search, self, search_queries, 5)
                     search_futures.append((future, i, 'parallel'))
             
             # Collect search results

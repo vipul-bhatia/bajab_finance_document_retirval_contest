@@ -1,71 +1,66 @@
 import openai
+import requests
+import json
 from typing import List, Dict, Any, Optional
+
+def call_tool_get_data(url: str, timeout: int = 60) -> Optional[Dict[str, Any]]:
+    """Make a GET request and return JSON (or None on failure)."""
+    print(f"🚀 Making GET request to: {url}")
+    try:
+        response = requests.get(url, timeout=timeout)
+        if response.status_code == 200:
+            print(f"✅ Request Successful!")
+            return response.json()
+        print(f"❌ Request failed [{response.status_code}]: {response.text}")
+    except Exception:
+        pass
+    return None
 
 
 class QueryEnhancer:
-    """Uses GPT-4o to enhance search results by selecting most relevant items"""
-    
     def __init__(self):
-        # Initialize OpenAI client - API key should be set in environment variables
         self.client = openai.OpenAI()
         self.model = "gpt-4.1-mini-2025-04-14"
-    
-    def get_most_relevant_chunk(self, query: str, search_results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        Use GPT-4o to provide a direct, concise, and user-friendly answer based on search results.
-        """
-        if not search_results:
-            return None
-        
-        results_text = ""
-        for i, result in enumerate(search_results, 1):
-            results_text += f"Context: {result['text']}\n"
-            if 'source_query' in result and result['source_query'] != query:
-                results_text += f"[Found via sub-query: '{result['source_query']}']\n"
-            results_text += "\n"
 
-#         prompt = f"""You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer a user's query with complete accuracy, based strictly on the provided text chunks.
+        self.functions = [
+            {
+                "name": "call_tool_get_data",
+                "description": "Make a GET HTTP request to a given URL",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "API endpoint URL"},
+                        "timeout": {"type": "integer", "description": "Request timeout in seconds"}
+                    },
+                    "required": ["url"]
+                }
+            }
+        ]
 
-# **User Query:** "{query}"
+    def get_most_relevant_chunk(
+        self,
+        query: str,
+        search_results: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        try:
+            if not search_results:
+                return {"answer": None, "source_chunks": [], "total_chunks_analyzed": 0}
 
-# **Retrieved Information:**
-# {results_text}
+            # 1) Build the combined context
+            results_text = ""
+            for i, r in enumerate(search_results, 1):
+                results_text += f"Context {i}: {r['text']}\n"
+                if r.get("source_query") and r["source_query"] != query:
+                    results_text += f"[via sub-query: {r['source_query']}]\n"
+                results_text += "\n"
 
-# **Instructions:**
-# 1. **Analyze & Synthesize:** Carefully analyze all provided information to craft a *COMPLETE*, *ACCURATE*, and natural-sounding response that directly answers the query.
-
-# 2. **Natural, Direct Tone:** Provide answers in a clear, conversational tone as if explaining to a colleague. Avoid mechanical phrases like "the text states" or "according to the document." Simply present the information naturally.
-
-# 3. **Accuracy & Completeness:** 
-#    - Base your answer strictly on the provided information
-#    - Synthesize multiple relevant pieces into a coherent response
-#    - Do not add information or make assumptions beyond what's given
-#    - If you cannot find a complete answer, acknowledge this clearly
-
-# 4. **Verification:** Before responding, verify that your answer:
-#    - Addresses all aspects of the query
-#    - Maintains complete accuracy to the source material
-#    - Sounds natural and conversational
-#    - Includes all relevant details while remaining clear and focused
-
-# 5. **Length of the answer:** The answer must be concise. It should be of approx 2 sentences ensuring *completeness* and factual accuracy without unnecessary elaboration.
-
-# Example Query: "What is the grace period for premium payment?"
-
-# ✅ Good Answer:
-# "You have 30 days after your premium due date to make the payment. During this grace period, your policy stays active and paying within this time ensures you keep your continuity benefits."
-
-# ❌ Poor Answer:
-# "According to chunk 1, there is a grace period of 30 days mentioned for premium payments."
-
-# Your response:"""
-        
-# This is the prompt for your get_most_relevant_chunk method
-        prompt = f"""
-
-You are an expert AI assistant specializing in information extraction and synthesis. Your primary goal is to answer the user's query with complete accuracy, using only the provided text chunks as your source of information.
-
-User Query: "{query}"
+            system_msg = {
+                "role": "system",
+                "content": "You are an expert AI assistant specializing in information extraction."
+            }
+            user_msg = {
+                "role": "user",
+                "content": f"""User Query: "{query}"
 
 Retrieved Information:
 {results_text}
@@ -85,7 +80,7 @@ Retrieved Information:
 
 7. **Clear Tone and Professional Phrasing:** Write the answer in a clear, straightforward manner.
 
-* **Forbidden Phrases:** **Do not** use introductory phrases that refer to the sources, such as "The provided text states..." or "According to the sources...".
+* **Strictly Forbidden Phrases:** **Do not** use introductory phrases that refer to the sources or the chunks, such as "The provided text states..." or "According to the sources..." or "According to chunk 43". Mentioning about the source or chunk number in the answer is strictly forbidden.
 
 8. **Final Self-Check:** Before providing the answer, verify that it:
 
@@ -99,77 +94,85 @@ Retrieved Information:
 
 * When answering arithmetic questions, follow the exact calculation method shown in the chunks and context, even if it differs from standard mathematics , if no imformation is provided in chunks do normal calculation according to standard maths(Exmaple - 1 + 1 = 2). Use the same pattern or rule demonstrated, without explaining(critical no need for explanation) or correcting the approach.
 
+***Use case specific(only if calling an endpoint is required to get the answer):***
+If retrieving the answer requires calling an endpoint, use the tool call_tool_get_data.
+You may call it multiple times. Understand all steps, then call to get the answer.
+while giving the final answer, do not mention any thing about the source or chunk number in the answer. Just reply with what is asked with a short description.
+***End of Use case specific part***
+
+
 Example Query: "What is the grace period for premium payment?"
 
 ✅ Good Answer: "You have 30 days after your premium due date to make the payment. During this grace period, your policy stays active, and paying within this time keeps your continuity benefits intact."
 
 ❌ Poor Answer: "According to chunk 1, there is a grace period of 30 days mentioned for premium payments."
 
-Example 2: “Is abortion covered?”
+Example 2: "Is abortion covered?"
 
 ✅ Good Answer: "The policy covers lawful medical termination of pregnancy only on medical grounds or due to an accident. Voluntary termination within the first 12 weeks is not covered."
 
-Example 3: “If I change my religion, can the government stop me?”
+Example 3: "If I change my religion, can the government stop me?"
 
 ✅ Good Answer: "Under Article 25, every person has the freedom of conscience and the right to freely profess, practice, and propagate religion, subject to public order, morality, and health."
 
-❌ Poor Answer(uses special characters): "Under /Article 25/, every person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health."
+❌ Poor Answer(uses special characters, mentions the source): "Under /Article 25/, every person has the "freedom" of conscience and the right to freely profess, practice, and propagate religion,/n/n subject to public order, morality, and health.(Chunk 43)"
 
 Your response:
-
 """
-
-
-
-
-        # print("--------------------------------")
-        # print("--------------------------------")
-        # print(f"query: {query}")
-        # print("--------------------------------")
-        # print("--------------------------------")
-        # print(len(results_text))
-        # print(f"chuncks input: {results_text}")
-        # print("--------------------------------")
-        # print("--------------------------------")
-
-
-
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert AI assistant. Your task is to accurately answer user queries based *only* on the provided text. Be direct and concise."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-                max_completion_tokens=1500,
-                # temperature=0.0
-            )
-            
-            answer_text = response.choices[0].message.content.strip()
-            
-            result = {
-                'answer': answer_text,
-                'source_chunks': [result['chunk_index'] for result in search_results],
-                'total_chunks_analyzed': len(search_results)
             }
-            
-            print(f"🧠 Generated enhanced answer based on {len(search_results)} chunks.")
-            
-            return result
-            
-        except Exception as e:
-            print(f"Error using GPT-4o for analysis: {e}")
+
+            # 2) Initialize the message history
+            messages = [system_msg, user_msg]
+
+            # 3) Loop until we get a text response (no function_call)
+            while True:
+                resp = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    functions=self.functions,
+                    function_call="auto",
+                    max_completion_tokens=1500,
+                )
+                msg = resp.choices[0].message
+
+                # 4) Did the model request a function call?
+                if hasattr(msg, "function_call") and msg.function_call is not None:
+                    fn_name = msg.function_call.name
+                    fn_args = json.loads(msg.function_call.arguments)
+
+                    # 5) Execute the function
+                    result = call_tool_get_data(
+                        url=fn_args["url"],
+                        timeout=fn_args.get("timeout", 60)
+                    ) or {}
+
+                    # 6) Append the assistant's function_call and our function result
+                    messages.append(
+                        {"role": "assistant", "content": None, "function_call": {
+                            "name": fn_name,
+                            "arguments": msg.function_call.arguments
+                        }}
+                    )
+                    messages.append(
+                        {"role": "function", "name": fn_name, "content": json.dumps(result)}
+                    )
+
+                    # Loop back and let the model decide the next step
+                    continue
+
+                # 7) No function_call → final answer
+                final_answer = msg.content.strip()
+                break
+
             return {
-                'answer': f"Unable to analyze the query due to an error: {str(e)}",
-                'source_chunks': [result['chunk_index'] for result in search_results],
-                'total_chunks_analyzed': len(search_results)
+                "answer": final_answer,
+                "source_chunks": [r.get("chunk_index") for r in search_results],
+                "total_chunks_analyzed": len(search_results)
             }
-    
- 
+        except Exception as e:
+            print(f"❌ Error in get_most_relevant_chunk: {str(e)}")
+            return {
+                "answer": f"Sorry, I encountered an error while processing your query: {str(e)}",
+                "source_chunks": [r.get("chunk_index") for r in search_results] if search_results else [],
+                "total_chunks_analyzed": len(search_results) if search_results else 0
+            }
