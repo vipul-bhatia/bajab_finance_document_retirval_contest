@@ -103,6 +103,9 @@ async def process_document_and_questions(
         AnswersResponse with list of answers
     """
     total_start_time = time.time()
+
+    print("Request documents", request.documents)
+    print("Request questions", request.questions)
     
     try:
         print(f"🚀 Starting document processing pipeline...")
