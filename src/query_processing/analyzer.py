@@ -115,7 +115,7 @@ User Query: "{query}"
             print(f"Error in query analysis after all retries: {e}. Falling back to original query.")
             return [query]
     
-    def parallel_search(self, search_engine, search_queries: List[str], top_k_per_query: int = 3) -> List[Dict[str, Any]]:
+    def parallel_search(self, search_engine, search_queries: List[str], top_k_per_query: int = 5) -> List[Dict[str, Any]]:
         """
         Execute multiple searches in parallel and combine results.
         (This method remains largely the same but is called by the search engine)
