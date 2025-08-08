@@ -286,6 +286,88 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
         print(f"🔄 Processing document from memory with PARALLELIZED PyMuPDF...")
         try:
             content = ""
+            
+            def _is_poor_quality_text(text: str) -> bool:
+                """Heuristics to detect garbled extraction (common with CJK/Indic PDFs)."""
+                if not text or len(text.strip()) < 50:
+                    return True
+                replacement_chars = text.count('\ufffd')
+                if replacement_chars / max(1, len(text)) > 0.002:  # >0.2% replacement chars
+                    return True
+                # If Malayalam is expected but sparsely present relative to total text
+                mal_count = sum(1 for ch in text if '\u0D00' <= ch <= '\u0D7F')
+                if mal_count > 0 and mal_count / max(1, len(text)) < 0.05:
+                    return True
+                return False
+
+            def _ocr_pdf_bytes(pdf_bytes: bytes) -> str:
+                """Fallback OCR using pdf2image + Tesseract (mal+eng)."""
+                try:
+                    from pdf2image import convert_from_bytes
+                    import pytesseract
+                    from PIL import Image
+                except Exception as _imp_err:
+                    print(f"⚠️ OCR dependencies missing: {_imp_err}")
+                    return ""
+                try:
+                    pages: List[Image.Image] = convert_from_bytes(pdf_bytes, dpi=300)
+                except Exception as _conv_err:
+                    print(f"⚠️ Could not rasterize PDF for OCR: {_conv_err}")
+                    return ""
+                ocr_text_parts: List[str] = []
+                for idx, img in enumerate(pages, start=1):
+                    try:
+                        text = pytesseract.image_to_string(img, lang='mal+eng')
+                        if text and text.strip():
+                            ocr_text_parts.append(text.strip())
+                        else:
+                            ocr_text_parts.append("")
+                    except Exception as _ocr_err:
+                        print(f"⚠️ OCR failed on page {idx}: {_ocr_err}")
+                return "\n\n".join([t for t in ocr_text_parts if t])
+
+            def _openai_vision_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
+                """Second-level fallback: Use OpenAI Vision on rasterized PDF pages."""
+                try:
+                    from pdf2image import convert_from_bytes
+                    import base64
+                    from openai import OpenAI
+                except Exception as _imp_err:
+                    print(f"⚠️ OpenAI Vision dependencies missing: {_imp_err}")
+                    return ""
+                try:
+                    pages = convert_from_bytes(pdf_bytes, dpi=200)
+                except Exception as _conv_err:
+                    print(f"⚠️ Could not rasterize PDF for OpenAI Vision: {_conv_err}")
+                    return ""
+
+                client = OpenAI()
+                all_text_parts: List[str] = []
+                for idx, img in enumerate(pages, start=1):
+                    try:
+                        from io import BytesIO
+                        buf = BytesIO()
+                        img.save(buf, format="PNG")
+                        encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+                        data_url = f"data:image/png;base64,{encoded}"
+                        response = client.chat.completions.create(
+                            model="gpt-4.1-mini-2025-04-14",
+                            messages=[{
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": "Extract the text exactly as it appears. Do not paraphrase. If unreadable, output the closest readable characters. If truly no text, write [NO TEXT]."},
+                                    {"type": "image_url", "image_url": {"url": data_url}}
+                                ]
+                            }],
+                            temperature=0.0,
+                            max_tokens=1200
+                        )
+                        page_text = (response.choices[0].message.content or "").strip()
+                        if page_text and page_text != "[NO TEXT]":
+                            all_text_parts.append(page_text)
+                    except Exception as _oa_err:
+                        print(f"⚠️ OpenAI Vision failed on page {idx}: {_oa_err}")
+                return "\n\n".join(all_text_parts)
             if file_extension == 'bin':
                 print("⚠️ Binary file detected - skipping processing")
                 content = """
@@ -307,6 +389,21 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
                     page_texts = list(executor.map(DocumentProcessor._extract_text_from_page, doc))
                 doc.close()
                 content = "\n\n".join(page_texts)
+                # If PDF text looks garbled, fallback to OCR
+                if _is_poor_quality_text(content):
+                    print("⚠️ Detected poor-quality PDF text extraction. Falling back to OCR (mal+eng)...")
+                    ocr_text = _ocr_pdf_bytes(file_bytes)
+                    if ocr_text and len(ocr_text.strip()) > 20:
+                        content = ocr_text
+                        print("✅ OCR fallback succeeded.")
+                    else:
+                        print("⚠️ OCR fallback did not produce usable text; trying OpenAI Vision fallback...")
+                        oa_text = _openai_vision_text_from_pdf_bytes(file_bytes)
+                        if oa_text and len(oa_text.strip()) > 20:
+                            content = oa_text
+                            print("✅ OpenAI Vision fallback succeeded.")
+                        else:
+                            print("⚠️ OpenAI Vision fallback also failed; proceeding with original extraction.")
             elif file_extension == 'txt':
                 content = file_bytes.decode('utf-8', errors='ignore')
             elif file_extension in ['html', 'htm']:

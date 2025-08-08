@@ -15,6 +15,8 @@ RUN apt-get update && \
       libreoffice-draw \
       libreoffice-calc \
       poppler-utils \
+      tesseract-ocr \
+      tesseract-ocr-mal \
       fonts-liberation \
       xvfb && \
     rm -rf /var/lib/apt/lists/*
