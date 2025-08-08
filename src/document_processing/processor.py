@@ -110,10 +110,14 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
             # Get file extension
             parsed_url = urlparse(url)
             file_extension = os.path.splitext(parsed_url.path)[1].lower().replace('.', '')
-            
+
+            # Special-case: secret-token endpoint returns text; treat as plain text
+            if 'register.hackrx.in' in parsed_url.netloc and 'get-secret-token' in parsed_url.path:
+                file_extension = 'txt'
+
             if not file_extension:
                 # Try to get extension from Content-Type
-                response = requests.head(url, timeout=30)
+                response = requests.head(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
                 content_type = response.headers.get('content-type', '').lower()
                 if 'pdf' in content_type:
                     file_extension = 'pdf'
@@ -121,8 +125,12 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
                     file_extension = 'zip'
                 elif 'image' in content_type:
                     file_extension = content_type.split('/')[-1]
+                elif 'text/plain' in content_type:
+                    file_extension = 'txt'
+                elif 'text/html' in content_type or 'application/xhtml' in content_type:
+                    file_extension = 'html'
                 else:
-                    file_extension = 'pdf'  # Default to PDF
+                    file_extension = 'txt'  # Default to text for safety
 
             # Don't download binary files
             if file_extension == 'bin':
@@ -146,6 +154,20 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
             
             print(f"✅ Document downloaded successfully")
             
+            # Refine file extension based on actual response headers if needed
+            if not file_extension or file_extension in {''}:
+                ct = response.headers.get('content-type', '').lower()
+                if 'pdf' in ct:
+                    file_extension = 'pdf'
+                elif 'zip' in ct:
+                    file_extension = 'zip'
+                elif 'image' in ct:
+                    file_extension = ct.split('/')[-1]
+                elif 'text/plain' in ct:
+                    file_extension = 'txt'
+                elif 'text/html' in ct or 'application/xhtml' in ct:
+                    file_extension = 'html'
+
             # Process the downloaded document from memory
             chunks = DocumentProcessor.load_document_from_memory(response.content, file_extension)
             
@@ -174,6 +196,10 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
             # Get file extension to pass to the processing function
             parsed_url = urlparse(url)
             file_extension = os.path.splitext(parsed_url.path)[1].lower().replace('.', '')
+            
+            # Special-case: secret-token endpoint returns text; treat as plain text
+            if 'register.hackrx.in' in parsed_url.netloc and 'get-secret-token' in parsed_url.path:
+                file_extension = 'txt'
             if not file_extension:
                 # Try to get extension from Content-Type
                 response = requests.head(url, timeout=30, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"})
@@ -184,8 +210,12 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
                     file_extension = 'zip'
                 elif 'image' in content_type:
                     file_extension = content_type.split('/')[-1]
+                elif 'text/plain' in content_type:
+                    file_extension = 'txt'
+                elif 'text/html' in content_type or 'application/xhtml' in content_type:
+                    file_extension = 'html'
                 else:
-                    file_extension = 'pdf'  # Default to PDF
+                    file_extension = 'txt'  # Default to text for safety
 
             # Don't download binary files
             if file_extension == 'bin':
@@ -215,6 +245,20 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
             processing_start = time.time()
 
             # Call the new in-memory processing function
+            # Refine file extension based on actual response headers if needed
+            if not file_extension or file_extension in {''}:
+                ct = response.headers.get('content-type', '').lower()
+                if 'pdf' in ct:
+                    file_extension = 'pdf'
+                elif 'zip' in ct:
+                    file_extension = 'zip'
+                elif 'image' in ct:
+                    file_extension = ct.split('/')[-1]
+                elif 'text/plain' in ct:
+                    file_extension = 'txt'
+                elif 'text/html' in ct or 'application/xhtml' in ct:
+                    file_extension = 'html'
+
             chunks = DocumentProcessor.load_document_from_memory(response.content, file_extension, chunk_size)
             
             processing_end = time.time()
@@ -264,7 +308,14 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
                 doc.close()
                 content = "\n\n".join(page_texts)
             elif file_extension == 'txt':
-                content = file_bytes.decode('utf-8')
+                content = file_bytes.decode('utf-8', errors='ignore')
+            elif file_extension in ['html', 'htm']:
+                import re as _re
+                import html as _html
+                html_text = file_bytes.decode('utf-8', errors='ignore')
+                # Strip tags in a simple way without external dependencies
+                text_only = _re.sub(r'<[^>]+>', ' ', html_text)
+                content = _html.unescape(_re.sub(r'\s+', ' ', text_only)).strip()
             elif file_extension in ['docx', 'doc']:
                 from docx import Document
                 import io
