@@ -1,62 +1,77 @@
-# Document Retrieval System
+# Bajaj Finance Document Retrieval System
 
-A modular document retrieval system using Google's Gemini embeddings and SQLite for efficient semantic search. This project now includes a FastAPI interface for easy integration and deployment with intelligent similarity search to avoid redundant processing.
+A sleek FastAPI service for answering questions from documents via semantic search. It uses OpenAI embeddings with FAISS for vector search, dynamic chunking for large docs, neighbor-chunk expansion for better context, and a similarity cache to reuse past answers.
 
 ## Project Structure
 
 ```
 .
-├── .gitignore
-├── api.py                    # FastAPI application
-├── docker-compose.yml        # Docker Compose configuration
-├── Dockerfile                # Dockerfile for building the application image
-├── env.example               # Example environment file
-├── main.py                   # Main script to run the application
-├── README.md                 # This file
-├── requirements.txt          # Python dependencies
-├── questions_answers.jsonl   # Permanent storage for questions and answers
-├── request_logs.jsonl        # Request logs (existing functionality)
-├── test_qa_storage.py        # Test script for QA storage functionality
-├── test_similarity_search.py # Test script for similarity search functionality
-├── src/
-│   ├── __init__.py
-│   ├── config.py             # Configuration and device setup
-│   ├── document_manager.py   # Main orchestrator class
-│   ├── document_processing/  # Document loading and chunking
-│   │   ├── __init__.py
-│   │   └── processor.py
-│   ├── embeddings/          # Embedding generation using Gemini
-│   │   ├── __init__.py
-│   │   └── generator.py
-│   ├── database/            # SQLite operations for embeddings
-│   │   ├── __init__.py
-│   │   └── manager.py
-│   ├── search/              # Semantic search engine
-│   │   ├── __init__.py
-│   │   ├── engine.py
-│   │   ├── fuzzy.py         # Fuzzy string matching utilities
-│   │   └── similarity_search.py # Similarity search for Q&A
-└── sample_documents/
+├── api.py                          # FastAPI application
+├── main.py                         # Local dev entrypoint (uvicorn)
+├── Dockerfile                      # Container image
+├── docker-compose.yml              # Compose setup
+├── requirements.txt                # Python deps
+├── env.example                     # Example environment variables
+├── README.md
+├── document_cache/                 # Cached text chunks per document
+├── document_embeddings/            # FAISS indexes (auto-created)
+├── questions_answers.jsonl         # Persistent Q&A store
+├── request_logs.jsonl              # Request logs
+├── sample_documents/               # Example inputs
+└── src/
+    ├── __init__.py
+    ├── config.py                   # Global config (device, models, paths)
+    ├── document_manager.py         # Orchestrates processing/search
+    ├── document_processing/
+    │   ├── __init__.py
+    │   └── processor.py            # Load, OCR, dynamic chunking
+    ├── embeddings/
+    │   ├── __init__.py
+    │   └── generator.py            # OpenAI embedding calls
+    ├── database/
+    │   ├── __init__.py
+    │   └── manager.py              # FAISS read/write, migration
+    ├── query_processing/
+    │   ├── __init__.py
+    │   ├── analyzer.py             # Query decomposition
+    │   └── enhancer.py             # Answer synthesis w/ prompt rules
+    └── search/
+        ├── __init__.py
+        ├── engine.py               # Retrieval + neighbor expansion
+        └── similarity_search.py    # Q&A similarity cache
 ```
 
-## Setup
+## Environment
+
+Copy `.env` from `env.example` and fill values:
+
+```
+OPENAI_API_KEY=your_openai_key
+GOOGLE_API_KEY=your_google_api_key
+EXPECTED_TOKEN=your_api_bearer_token
+
+# Optional (defaults shown)
+EMBEDDINGS_DIR=document_embeddings
+```
+
+Notes:
+- Mac with Apple Silicon uses MPS automatically when available.
+- `EXPECTED_TOKEN` is required for the API bearer auth.
+
+## Quick Start
 
 ### Local Development
 
-1.  **Install dependencies**:
+1.  Install dependencies:
     ```bash
     pip install -r requirements.txt
     ```
 
-2.  **Set up environment**:
-    Create a `.env` file from the `env.example` and add your API keys:
-    ```
-    OPENAI_API_KEY=your_openai_api_key
-    GOOGLE_API_KEY=your_google_api_key
-    ```
-    Get your Google API key from: https://aistudio.google.com/app/apikey
+2.  Set up environment:
+    - Create `.env` from `env.example` and populate the keys above.
+    - Get Google API key from: https://aistudio.google.com/app/apikey
 
-3.  **Run the application**:
+3.  Run the application:
     ```bash
     python main.py
     ```
@@ -67,7 +82,7 @@ A modular document retrieval system using Google's Gemini embeddings and SQLite 
 1.  **Set up environment**:
     Create a `.env` file as described above.
 
-2.  **Build and run the container**:
+2.  Build and run the container:
     ```bash
     docker-compose build
     docker-compose up
@@ -109,102 +124,28 @@ This endpoint returns all questions and answers that have been processed and sto
 curl http://localhost:8000/health
 ```
 
-## Intelligent Similarity Search
+## How it works (high level)
 
-The system now includes intelligent similarity search functionality that optimizes performance by avoiding redundant processing:
+- Query analysis: decomposes complex questions to multiple focused queries.
+- Retrieval: FAISS similarity search over dynamic chunks; each hit expands with 1 neighbor up/down.
+- Answering: enhancer synthesizes a concise, source-grounded answer; responds in the source language if not English.
+- Similarity cache: skips work for previously answered questions per document.
 
-### How It Works
+## Data & Storage
 
-1. **Pre-processing Check**: Before processing any new questions, the system checks the stored `questions_answers.jsonl` file for similar questions using fuzzy string matching.
-
-2. **Similarity Threshold**: Questions with 90% or higher similarity are considered matches and their cached answers are returned immediately.
-
-3. **Hybrid Processing**: If some questions have matches and others don't, only the unmatched questions are processed through the full pipeline.
-
-4. **Performance Benefits**: 
-   - **Faster Response Times**: Matched questions return instantly
-   - **Reduced Processing**: Avoids redundant document processing and embedding generation
-   - **Cost Savings**: Reduces API calls to external services
-
-### Similarity Search Algorithm
-
-The system uses the `thefuzz` library with the `fuzz.ratio()` function to calculate similarity scores between questions. This algorithm:
-
-- Compares questions character by character
-- Handles typos, word order changes, and minor variations
-- Returns scores from 0-100 (100 being exact match)
-- Is case-insensitive for better matching
-
-### Example Scenarios
-
-**Scenario 1: All Questions Match**
-```
-Input: ["What is Newton's definition of quantity of motion?"]
-Result: Returns cached answer immediately (no document processing)
-```
-
-**Scenario 2: Partial Matches**
-```
-Input: ["What is Newton's definition?", "What is the main topic?"]
-Result: Returns cached answer for first question, processes second question
-```
-
-**Scenario 3: No Matches**
-```
-Input: ["What is the main topic of this document?"]
-Result: Processes all questions normally
-```
-
-## Data Storage
-
-### Questions and Answers Storage
-
-The system includes permanent storage for questions and answers in `questions_answers.jsonl`. This file stores:
-
-- **Timestamp**: When the Q&A was processed
-- **Document Name**: Identifier for the processed document
-- **Document URL**: Source URL of the document
-- **Questions**: List of questions asked
-- **Answers**: List of corresponding answers
-
-Each entry is stored as a JSON object on a separate line (JSONL format).
-
-### Request Logs
-
-The existing `request_logs.jsonl` file continues to store comprehensive request information including:
-- Timing data and processing details
-- Similarity search usage statistics
-- Cached vs. new answer counts
-
-### Testing the Storage
-
-You can test the questions and answers storage functionality using the provided test scripts:
-
-```bash
-# Test basic Q&A storage
-python test_qa_storage.py
-
-# Test similarity search functionality
-python test_similarity_search.py
-```
+- `document_cache/`: cached raw text chunks per document (speeds re-processing)
+- `document_embeddings/`: FAISS indexes per document (auto-migrated here)
+- `questions_answers.jsonl`: persistent Q&A history
+- `request_logs.jsonl`: request/timing logs
 
 ## Configuration
 
 Edit `src/config.py` to modify:
-- **Model settings**: Change embedding model or dimensions
-- **Search parameters**: Adjust top-k results
-- **Default paths**: Set default document locations
-- **Device preferences**: Force specific device usage
+- Model settings (embedding model, dimensions)
+- Search parameters (top-k, device)
+- Paths (default document, embeddings dir)
 
-## File Descriptions
+## Tips
 
-- **`main.py`**: Entry point to run the FastAPI application.
-- **`api.py`**: Defines the FastAPI application and its endpoints.
-- **`Dockerfile`**: Instructions for building the Docker image.
-- **`docker-compose.yml`**: Defines the services for Docker Compose.
-- **`src/config.py`**: Centralized configuration.
-- **`src/document_manager.py`**: High-level orchestrator for document processing.
-- **`src/document_processing/processor.py`**: Handles document loading and chunking.
-- **`src/embeddings/generator.py`**: Generates embeddings using Gemini.
-- **`src/database/manager.py`**: Manages the SQLite database for embeddings.
-- **`src/search/engine.py`**: Implements the semantic search functionality.
+- Increase concurrency knobs only if your API limits and machine can support it.
+- Large PDFs benefit from the dynamic chunking and neighbor expansion already enabled.
