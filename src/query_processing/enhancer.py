@@ -83,7 +83,9 @@ Retrieved Information:
 
 * **Strictly Forbidden Phrases:** **Do not** use introductory phrases that refer to the sources or the chunks, such as "The provided text states..." or "According to the sources..." or "According to chunk 43". Mentioning about the source or chunk number in the answer is strictly forbidden.
 
-8. **Final Self-Check:** Before providing the answer, verify that it:
+8. **Language of Response:** If the user query or the retrieved information is primarily in a language other than English (e.g., Malayalam), respond in that language. Provide concise, direct answers in that language.
+
+9. **Final Self-Check:** Before providing the answer, verify that it:
 
 * Fully **answers the query**.
 

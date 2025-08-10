@@ -5,7 +5,7 @@ import tempfile
 import requests
 import io
 from urllib.parse import urlparse
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from ..config import CHUNK_SIZE, CHUNK_OVERLAP
 import time
 import email
@@ -16,6 +16,38 @@ import zipfile
 class DocumentProcessor:
     """Handles document loading and chunking operations"""
     
+    @staticmethod
+    def _compute_dynamic_chunk_params(total_characters: int, page_count: Optional[int] = None) -> Tuple[int, int]:
+        """Compute chunk_size and overlap dynamically based on document size.
+
+        Strategy:
+        - Estimate pages if not provided using average characters per page.
+        - Increase chunk size gradually for larger documents to provide richer context and reduce chunk explosion.
+        - Scale overlap as a small fraction of chunk size.
+        """
+        AVERAGE_CHARS_PER_PAGE = 1800  # heuristic for plain text
+        pages = page_count if (page_count and page_count > 0) else max(1, total_characters // AVERAGE_CHARS_PER_PAGE)
+
+        # Piecewise scaling of chunk size by document length
+        if pages <= 30:
+            chunk_size = 1400
+        elif pages <= 60:
+            chunk_size = 1800
+        elif pages <= 120:
+            chunk_size = 2400
+        elif pages <= 250:
+            chunk_size = 3000
+        elif pages <= 500:
+            chunk_size = 3600
+        else:
+            chunk_size = 4200
+
+        # Overlap ~7% of chunk size, with sensible bounds
+        overlap = max(100, min(600, int(chunk_size * 0.07)))
+
+        print(f"   🔧 Dynamic chunking -> pages≈{pages}, chars={total_characters}, chunk_size={chunk_size}, overlap={overlap}")
+        return chunk_size, overlap
+
     @staticmethod
     def load_document(file_path: str, chunk_size: int = CHUNK_SIZE) -> list:
         """Load document and split into chunks
@@ -82,8 +114,19 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
             else:
                 raise ValueError(f"Unsupported file format: {file_extension}")
             
+            # Dynamic chunk sizing based on content and detected page count (where applicable)
+            detected_pages = None
+            if file_extension == 'pdf':
+                try:
+                    with fitz.open(stream=file_path, filetype="pdf") as _doc_count:
+                        detected_pages = _doc_count.page_count
+                except Exception:
+                    detected_pages = None
+
+            dyn_chunk_size, dyn_overlap = DocumentProcessor._compute_dynamic_chunk_params(len(content), detected_pages)
+
             # Improved chunking algorithm
-            chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
+            chunks = DocumentProcessor._smart_chunk_text(content, dyn_chunk_size, dyn_overlap)
             
             print(f"✅ Processed document and split into {len(chunks)} chunks")
             return chunks
@@ -286,6 +329,7 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
         print(f"🔄 Processing document from memory with PARALLELIZED PyMuPDF...")
         try:
             content = ""
+            detected_pages = None
             
             def _is_poor_quality_text(text: str) -> bool:
                 """Heuristics to detect garbled extraction (common with CJK/Indic PDFs)."""
@@ -389,21 +433,7 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
                     page_texts = list(executor.map(DocumentProcessor._extract_text_from_page, doc))
                 doc.close()
                 content = "\n\n".join(page_texts)
-                # If PDF text looks garbled, fallback to OCR
-                if _is_poor_quality_text(content):
-                    print("⚠️ Detected poor-quality PDF text extraction. Falling back to OCR (mal+eng)...")
-                    ocr_text = _ocr_pdf_bytes(file_bytes)
-                    if ocr_text and len(ocr_text.strip()) > 20:
-                        content = ocr_text
-                        print("✅ OCR fallback succeeded.")
-                    else:
-                        print("⚠️ OCR fallback did not produce usable text; trying OpenAI Vision fallback...")
-                        oa_text = _openai_vision_text_from_pdf_bytes(file_bytes)
-                        if oa_text and len(oa_text.strip()) > 20:
-                            content = oa_text
-                            print("✅ OpenAI Vision fallback succeeded.")
-                        else:
-                            print("⚠️ OpenAI Vision fallback also failed; proceeding with original extraction.")
+                detected_pages = len(page_texts)
             elif file_extension == 'txt':
                 content = file_bytes.decode('utf-8', errors='ignore')
             elif file_extension in ['html', 'htm']:
@@ -574,7 +604,9 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
         
             else:
                 raise ValueError(f"Unsupported file format for memory loading: {file_extension}")
-            chunks = DocumentProcessor._smart_chunk_text(content, chunk_size)
+            # Dynamic chunk sizing
+            dyn_chunk_size, dyn_overlap = DocumentProcessor._compute_dynamic_chunk_params(len(content), detected_pages)
+            chunks = DocumentProcessor._smart_chunk_text(content, dyn_chunk_size, dyn_overlap)
             print(f"✅ Processed document and split into {len(chunks)} chunks")
             return chunks
         except Exception as e:

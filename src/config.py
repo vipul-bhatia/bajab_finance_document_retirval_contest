@@ -33,6 +33,10 @@ TOP_K = 6 # Return top 5 results
 CHUNK_SIZE = 1400  # Characters per chunk (2500 = ~2 chunks per page)
 CHUNK_OVERLAP = 100  # Overlap between chunks
 
+# ─── Embeddings Storage Configuration ────────────────────────────────────────────
+# All FAISS indices will be stored under this directory
+EMBEDDINGS_DIR = os.getenv("EMBEDDINGS_DIR", "document_embeddings")
+
 # ─── Download Optimization Configuration ─────────────────────────────────────────
 DOWNLOAD_PARALLEL_WORKERS = 4  # Number of parallel download workers
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB chunks for parallel download

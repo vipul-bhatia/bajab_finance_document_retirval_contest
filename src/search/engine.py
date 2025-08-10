@@ -23,6 +23,15 @@ class SearchEngine:
         self.faiss_index = faiss_index
         self.document_chunks = chunks
         self.document_name = document_name
+
+    def _build_expanded_text(self, center_index: int, window: int = 1) -> str:
+        """Return text that includes the chunk at center_index and its neighbors within the window."""
+        if not self.document_chunks:
+            return ""
+        start_index = max(0, center_index - window)
+        end_index = min(len(self.document_chunks) - 1, center_index + window)
+        # Join with blank lines to preserve readability between chunks
+        return "\n\n".join(self.document_chunks[start_index:end_index + 1])
     
     def find_relevant_chunks(self, query: str, top_k: int = TOP_K):
         """Find relevant document chunks using FAISS"""
@@ -35,10 +44,12 @@ class SearchEngine:
         
         results = []
         for dist, i in zip(distances[0], indices[0]):
+            # Expand each hit by including one chunk above and below for fuller context
+            expanded_text = self._build_expanded_text(i, window=1)
             results.append({
-                "chunk_index": i,
-                "text": self.document_chunks[i],
-                "score": 1 - dist  # Convert distance to similarity score
+                "chunk_index": int(i),
+                "text": expanded_text,
+                "score": float(1 - dist)  # Convert distance to similarity score
             })
         
         return results
