@@ -1,19 +1,50 @@
-import google.generativeai as genai
 import concurrent.futures
+import time
 from typing import List, Dict, Any
-from ..embeddings import EmbeddingGenerator
 import json
-
+import openai
+import google.generativeai as genai
 
 class QueryAnalyzer:
     """Intelligent query analysis using a single, unified model call to decompose complex queries."""
     
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        # Initialize OpenAI client - API key should be set in environment variables
+        self.client = openai.OpenAI()
+        self.model = "gpt-4.1-mini-2025-04-14"
+        # self.model = genai.GenerativeModel('gemini-1.5-pro')
+    
+    def _retry_with_backoff(self, func, max_retries=2, backoff_factor=1):
+        """
+        Execute a function with retry logic and exponential backoff.
+        
+        Args:
+            func: Function to execute
+            max_retries: Maximum number of attempts (default: 2)
+            backoff_factor: Base delay between retries in seconds
+        
+        Returns:
+            Result of the function or raises the last exception
+        """
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except Exception as e:
+                last_exception = e
+                if attempt < max_retries - 1:  # Don't sleep on the last attempt
+                    delay = backoff_factor * (2 ** attempt)
+                    print(f"   ⚠️ Attempt {attempt + 1} failed: {e}. Retrying in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    print(f"   ❌ All {max_retries} attempts failed. Final error: {e}")
+        
+        raise last_exception
     
     def analyze_and_decompose_query(self, query: str) -> List[str]:
         """
-        Uses a single Gemini call to analyze a query.
+        Uses a single OpenAI call to analyze a query.
         - If the query is simple, it's returned as is.
         - If the query is complex, it's broken into searchable components.
         """
@@ -49,9 +80,22 @@ User Query: "{query}"
 **User Query:** "{query}"
 **Your Response:**"""
 
+        def _make_api_call():
+            # response = self.model.generate_content(prompt)
+            # return response.text.strip()
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert query analyzer for document search systems."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500,
+                temperature=0.1
+            )
+            return response.choices[0].message.content.strip()
+
         try:
-            response = self.model.generate_content(prompt)
-            response_text = response.text.strip()
+            response_text = self._retry_with_backoff(_make_api_call)
             
             search_queries = [q.strip() for q in response_text.split(',') if q.strip()]
             
@@ -68,10 +112,10 @@ User Query: "{query}"
             return search_queries
             
         except Exception as e:
-            print(f"Error in query analysis: {e}. Falling back to original query.")
+            print(f"Error in query analysis after all retries: {e}. Falling back to original query.")
             return [query]
     
-    def parallel_search(self, search_engine, search_queries: List[str], top_k_per_query: int = 3) -> List[Dict[str, Any]]:
+    def parallel_search(self, search_engine, search_queries: List[str], top_k_per_query: int = 5) -> List[Dict[str, Any]]:
         """
         Execute multiple searches in parallel and combine results.
         (This method remains largely the same but is called by the search engine)
@@ -113,48 +157,89 @@ User Query: "{query}"
         return unique_results
     
     def _batch_analyze_and_decompose(self, queries: List[str]) -> List[List[str]]:
-        """
-        Send a batch of queries to the LLM and return a list of decomposed queries for each input query.
-        """
-        prompt = f"""
-You are an expert at analyzing document search queries. Your task is to decompose complex user queries into smaller, searchable parts, while keeping simple queries intact.
+        prompt = f"""You are a sophisticated research analyst AI with enhanced query understanding capabilities. Your function is to analyze user intent and deconstruct queries into optimized search phrases for comprehensive information retrieval.
 
-For each user query in the input JSON list, you must decide if it's simple or complex.
+**STEP 1: INTENT CLASSIFICATION**
+For each query, first classify its intent:
+- **FACTUAL**: Direct fact lookup (What is X?, When does Y occur?)
+- **PROCEDURAL**: Process or step-by-step explanation (How to do X?)
+- **CONDITIONAL**: Scenario-based reasoning (If X happens, then what?)
+- **COMPARATIVE**: Comparison between options (X vs Y, differences between)
+- **ANALYTICAL**: Understanding relationships or implications (Why X?, What causes Y?)
 
-**RULES:**
+**STEP 2: DECOMPOSITION STRATEGY**
+Based on intent, apply appropriate decomposition:
 
-1.  **Simple Queries:**+ If a query is a single, direct question (especially “coverage for …”, “limit for …”, “how much …”), it is SIMPLE. Do NOT decompose it. Return it as a single-item list in the JSON output.
-    *   *Examples of simple queries:* "How does the policy define a 'Hospital'?", "What is the waiting period for cataract surgery?"
-    *   Example: "What is the extent of coverage for AYUSH treatments?" -> Extent of coverage for AYUSH treatments
+**1. FACTUAL Queries:** Keep simple if single fact, decompose if multiple facts needed.
+   * *Simple:* "What is the waiting period for cataract surgery?" -> `["waiting period for cataract surgery"]`
+   * *Complex:* "What are the limits and exclusions for dental treatment?" -> `["dental treatment coverage limits", "dental treatment exclusions", "dental procedure waiting periods"]`
 
-2.  **Complex Queries:** If a query combines multiple distinct concepts, conditions, or demographic data, it is COMPLEX. **Decompose it into meaningful, focused, searchable parts.**
-    *   *Decomposition Strategy:* Break it down into components that can be searched for independently.
-    *   *Example 1:* "What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?"
-        *   *Decomposition:* `[
-  "Grace Period definition in National Parivar Mediclaim Plus Policy",
-  "Length of Grace Period for premium payment",
-  "Policy renewal conditions after premium due date"
-]`
-    *   *Example 2:* "46M, knee surgery, Pune, 3-month policy"
-        *   *Decomposition:* `["46 year old male patient eligibility", "knee surgery coverage insurance", "Pune medical providers network", "3 month waiting period policy"]`
-    *   *Example 3:* "Is there a benefit for preventive health check-ups?"
-        *   *Decomposition:* `["preventive health check-ups", "benefit for preventive health check-ups", "health check-ups"]`
+**2. PROCEDURAL Queries:** Break into process steps + requirements + exceptions.
+   * *Example:* "How do I file a claim?" -> `["claim filing process steps", "required documents for claims", "claim submission timeline", "claim processing exceptions"]`
+
+**3. CONDITIONAL Queries:** Decompose into condition + outcomes + exceptions + definitions.
+   * *Example:* "If I'm hospitalized for 2 days, what's covered?" -> `["minimum hospitalization duration requirements", "coverage for short-term hospitalization", "exclusions for brief hospital stays", "definition of eligible hospitalization"]`
+
+**4. COMPARATIVE Queries:** Break into individual components for comparison.
+   * *Example:* "What's the difference between Plan A and Plan B benefits?" -> `["Plan A coverage benefits", "Plan B coverage benefits", "Plan A vs Plan B comparison", "differences in plan benefits"]`
+
+**5. ANALYTICAL Queries:** Decompose into cause + effect + context + exceptions.
+   * *Example:* "Why was my claim rejected?" -> `["common claim rejection reasons", "claim assessment criteria", "policy exclusions", "claim documentation requirements"]`
+
+**ENHANCED CONTEXT GENERATION:**
+For ANY query, always include:
+- **Definitions** of key terms mentioned
+- **Prerequisites** or conditions that apply
+- **Exceptions** or limitations
+- **Related processes** that might affect the answer
+- **Cross-references** to connected topics
+
+**DISAMBIGUATION FOCUS:**
+- Resolve ambiguous pronouns (it, this, that, they)
+- Clarify context-dependent terms
+- Include related concepts that provide complete understanding
+- Address potential misinterpretations
+
+**RELATIONSHIP AWARENESS:**
+- Include queries that find connected information
+- Search for cause-effect relationships
+- Look for procedural dependencies
+- Find conditional variations
+
+**OPTIMIZATION PRINCIPLES:**
+* **Intent-Driven**: Tailor decomposition to query intent
+* **Context-Complete**: Ensure all necessary context is captured
+* **Disambiguation-Ready**: Include terms that resolve ambiguities
+* **Relationship-Aware**: Connect related concepts and processes
+
 
 **Input Format:** A JSON list of strings, where each string is a user query.
+**Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts.
 
-**Output Format:** You MUST return a JSON list of lists. Each inner list corresponds to a query from the input and contains the decomposed parts (or the original query if it was simple).
-
----
 **Input:**
 {json.dumps(queries, ensure_ascii=False)}
 
 **Output (JSON):**
 """
-        try:
-            response = self.model.generate_content(prompt)
-            response_text = response.text.strip()
+        
+        def _make_batch_api_call():
+            # response = self.model.generate_content(prompt)
+            # response_text = response.text.strip()
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert query analyzer for document search systems. Always respond with valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=2000,
+                temperature=0.1
+            )
+            response_text = response.choices[0].message.content.strip()
 
-            print('response_textttt', response_text)
+            print("📥 DEBUG: Raw response from OpenAI:")
+            print(f"{'='*50}")
+            print(response_text)
+            print(f"{'='*50}")
             
             # The model might return the JSON wrapped in markdown, so we extract it.
             if response_text.startswith("```json"):
@@ -177,11 +262,15 @@ For each user query in the input JSON list, you must decide if it's simple or co
                 else: # Fallback for unexpected types
                     result.append([queries[len(result)]])
 
+            return result
+
+        try:
+            result = self._retry_with_backoff(_make_batch_api_call)
             print(f"🧠 Batch decomposed {len(queries)} queries.")
             return result
             
         except Exception as e:
-            print(f"Error in batch query analysis: {e}. Falling back to original queries.")
+            print(f"Error in batch query analysis after all retries: {e}. Falling back to original queries.")
             return [[q] for q in queries]
     
     def process_multiple_queries(self, queries: List[str]) -> List[List[str]]:

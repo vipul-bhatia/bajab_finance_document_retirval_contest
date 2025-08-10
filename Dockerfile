@@ -5,6 +5,20 @@ FROM python:3.9-slim
 # Set the working directory in the container
 WORKDIR /app
 
+# somewhere before COPY / pip install
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      libreoffice-core \
+      libreoffice-writer \
+      libreoffice-common \
+      libreoffice-impress \
+      libreoffice-draw \
+      libreoffice-calc \
+      poppler-utils \
+      fonts-liberation \
+      xvfb && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy the requirements file into the container at /app
 COPY requirements.txt .
 

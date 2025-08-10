@@ -1,5 +1,6 @@
 import os
 import hashlib
+import json
 from .config import DOCUMENT_PATH
 from .document_processing import DocumentProcessor
 from .database import DatabaseManager
@@ -8,39 +9,55 @@ from .search import SearchEngine
 
 class DocumentManager:
     """Main class that orchestrates document processing, embedding storage, and search"""
-    
+
     def __init__(self):
         self.search_engine = SearchEngine()
         self.current_document = None
-    
+
     def initialize_document_from_url(self, document_url: str, chunk_size: int = None):
         """Initialize FAISS index from document URL - download, generate embeddings, then load for search"""
         import time
-        
+
         total_start = time.time()
         timing_data = {}
-        
+
         url_hash = hashlib.md5(document_url.encode()).hexdigest()[:12]
         document_name = f"doc_{url_hash}"
-        
-        download_start = time.time()
-        print(f"   📥 Downloading document...")
-        if chunk_size:
-            chunks = DocumentProcessor.download_and_process_document_with_size(document_url, chunk_size)
+        cache_path = f"document_cache/{document_name}_chunks.json"
+
+        # Check for cached chunks first
+        if os.path.exists(cache_path):
+            print(f"   📄 Loading chunks from cache...")
+            with open(cache_path, 'r') as f:
+                chunks = json.load(f)
+            timing_data['download_and_processing'] = 0.0
+            print(f"   ✅ Loaded {len(chunks)} chunks from cache.")
         else:
-            chunks = DocumentProcessor.download_and_process_document(document_url)
-        
-        if not chunks:
-            print("Failed to download or process document from URL.")
-            return False, document_name
-        
-        download_time = time.time() - download_start
-        timing_data['download_and_processing'] = round(download_time, 2)
-        print(f"   ✅ Download & processing: {download_time:.2f}s")
-        
+            download_start = time.time()
+            print(f"   📥 Downloading document...")
+            if chunk_size:
+                chunks = DocumentProcessor.download_and_process_document_with_size(document_url, chunk_size)
+            else:
+                chunks = DocumentProcessor.download_and_process_document(document_url)
+
+            if not chunks:
+                print("Failed to download or process document from URL.")
+                return False, document_name
+
+            download_time = time.time() - download_start
+            timing_data['download_and_processing'] = round(download_time, 2)
+            print(f"   ✅ Download & processing: {download_time:.2f}s")
+
+            # Cache the chunks
+            os.makedirs("document_cache", exist_ok=True)
+            with open(cache_path, 'w') as f:
+                json.dump(chunks, f)
+            print(f"   💾 Saved chunks to cache: {cache_path}")
+
+
         chunk_count = len(chunks)
         print(f"   📄 Document processed: {chunk_count} chunks extracted")
-        
+
         embedding_start = time.time()
         if DatabaseManager.embeddings_exist(document_name, chunk_count):
             print(f"   💾 Loading existing FAISS index from disk...")
@@ -55,27 +72,27 @@ class DocumentManager:
             embedding_gen_time = time.time() - embedding_gen_start
             timing_data['embedding_generation'] = round(embedding_gen_time, 2)
             print(f"   ✅ Embedding generation: {embedding_gen_time:.2f}s")
-            
+
             db_load_start = time.time()
             faiss_index = DatabaseManager.load_faiss_index(document_name)
             db_load_time = time.time() - db_load_start
             timing_data['faiss_load'] = round(db_load_time, 2)
             print(f"   ✅ FAISS index load: {db_load_time:.2f}s")
-        
+
         search_load_start = time.time()
         self.search_engine.load_embeddings(faiss_index, chunks, document_name)
         self.current_document = document_name
         search_load_time = time.time() - search_load_start
         timing_data['search_engine_load'] = round(search_load_time, 2)
-        
+
         total_time = time.time() - total_start
         timing_data['total_initialization'] = round(total_time, 2)
-        
+
         print(f"   ✅ Search engine load: {search_load_time:.2f}s")
         print(f"   🏁 Total initialization: {total_time:.2f}s")
-        
+
         self.timing_data = timing_data
-        
+
         return True, document_name
     
     def initialize_document(self, document_path: str = DOCUMENT_PATH, document_name: str = None):
