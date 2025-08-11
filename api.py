@@ -126,7 +126,8 @@ async def process_document_and_questions(
             "similarity_search_used": similarity_result['found_similar'],
             "cached_answers_count": 0,
             "new_answers_count": 0,
-            "document_name": "" # Placeholder
+            "document_name": "", # Placeholder
+            "total_pipeline_time": 0.0
         }
 
         if similarity_result['found_similar']:
