@@ -249,6 +249,7 @@ async def process_document_and_questions(
         log_entry["answers"] = all_answers
         log_entry["cached_answers_count"] = len(cached_answers)
         log_entry["new_answers_count"] = len(new_answers)
+        log_entry["total_pipeline_time"] = total_time
         await log_request(log_entry)
         
         return AnswersResponse(answers=all_answers)
