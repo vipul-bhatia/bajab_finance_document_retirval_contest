@@ -29,18 +29,16 @@ class DocumentProcessor:
         pages = page_count if (page_count and page_count > 0) else max(1, total_characters // AVERAGE_CHARS_PER_PAGE)
 
         # Piecewise scaling of chunk size by document length
-        if pages <= 30:
-            chunk_size = 1400
-        elif pages <= 60:
-            chunk_size = 1800
+        if pages <= 80:
+            chunk_size = 1200
         elif pages <= 120:
-            chunk_size = 2400
+            chunk_size = 1300
         elif pages <= 250:
-            chunk_size = 3000
+            chunk_size = 1400
         elif pages <= 500:
-            chunk_size = 3600
+            chunk_size = 1500
         else:
-            chunk_size = 4200
+            chunk_size = 1500
 
         # Overlap ~7% of chunk size, with sensible bounds
         overlap = max(100, min(600, int(chunk_size * 0.07)))
