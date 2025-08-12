@@ -1,4 +1,5 @@
 import openai
+import os
 import requests
 import json
 from typing import List, Dict, Any, Optional
@@ -22,6 +23,8 @@ class QueryEnhancer:
         self.client = openai.OpenAI()
         self.model = "gpt-4.1-mini-2025-04-14"
         # self.model = "gpt-5-mini-2025-08-07"
+        # If enabled, the normalizer will not ask the LLM to rewrite and will return the original answer unchanged
+        self.no_rewrite_mode = str(os.getenv("NO_REWRITE_NORMALIZATION", "1")).lower() in ("1", "true", "yes", "on")
 
         self.functions = [
             {
@@ -179,3 +182,75 @@ Your response:
                 "source_chunks": [r.get("chunk_index") for r in search_results] if search_results else [],
                 "total_chunks_analyzed": len(search_results) if search_results else 0
             }
+
+    def _normalize_single_answer(self, question: str, answer: str) -> str:
+        """
+        Normalize a cached answer to maximize exact-match scoring, without introducing new facts.
+
+        Rules:
+        - Do not invent, guess, or add information.
+        - If the answer already directly and minimally answers the question, return it unchanged.
+        - Remove prefixes/suffixes like "Answer:", "Your flight number is", etc.
+        - Trim whitespace and trailing punctuation.
+        - Preserve alphanumeric tokens (IDs, codes, amounts) exactly as-is.
+        - Prefer the question's language for any auxiliary words, but keep codes/numbers unchanged.
+        - If unsure, return the original answer unchanged.
+        """
+        # If no-rewrite mode is enabled, skip LLM and return the original answer as-is
+        if getattr(self, "no_rewrite_mode", False):
+            return answer
+        try:
+            system_msg = {"role": "system", "content": (
+                "You are an expert at normalizing short answers for exact-match evaluation. "
+                "Only rewrite the provided answer text to minimally satisfy the question. "
+                "Never invent or add facts. If already minimal, return unchanged. "
+                "Preserve alphanumeric tokens exactly (case-sensitive). Trim extra words, prefixes, and trailing punctuation."
+            )}
+            user_msg = {"role": "user", "content": (
+                f"Question: {question}\n"
+                f"Given Answer: {answer}\n\n"
+                "Return only the corrected answer text on a single line, with no explanation."
+            )}
+
+            resp = self.client.chat.completions.create(
+                model=self.model,
+                messages=[system_msg, user_msg],
+                max_tokens=100,
+                temperature=0.0
+            )
+            normalized = resp.choices[0].message.content.strip()
+            # Safety: avoid empty result and avoid rewriting identical answers
+            if not normalized:
+                return answer
+            if normalized == answer or normalized.strip() == answer.strip():
+                return answer
+            return normalized
+        except Exception as e:
+            print(f"⚠️ Normalization failed, using original. Error: {e}")
+            return answer
+
+    def normalize_cached_answers(self, questions: List[str], answers: List[str]) -> List[str]:
+        """
+        Normalize multiple cached answers in parallel, pairing by index with questions.
+        Falls back to original answers on any error.
+        """
+        import concurrent.futures
+        if not questions or not answers or len(questions) != len(answers):
+            return answers
+
+        results: List[str] = [None] * len(answers)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(answers))) as executor:
+            future_to_idx = {
+                executor.submit(self._normalize_single_answer, q, a): idx
+                for idx, (q, a) in enumerate(zip(questions, answers))
+            }
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    print(f"⚠️ Normalization task failed at index {idx}: {e}")
+                    results[idx] = answers[idx]
+
+        # Final safety: ensure no None entries
+        return [r if r is not None else answers[i] for i, r in enumerate(results)]

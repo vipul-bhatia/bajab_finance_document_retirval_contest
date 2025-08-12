@@ -19,6 +19,7 @@ import asyncio
 from datetime import datetime
 
 from src.document_manager import DocumentManager
+from src.query_processing import QueryEnhancer
 from src.search.similarity_search import find_similar_questions, get_answers_for_matched_questions
 
 from dotenv import load_dotenv
@@ -141,13 +142,20 @@ async def process_document_and_questions(
                 # Add 3-second delay when all queries match
                 await asyncio.sleep(7)
                 
-                # Extract answers in the correct order
+                # Extract answers in the correct order and normalize via enhancer
                 cached_answers = []
                 for question in request.questions:
                     for match in similarity_result['matched_questions']:
                         if match['new_question'] == question:
                             cached_answers.append(match['answer'])
                             break
+
+                # Normalize cached answers against their corresponding questions
+                try:
+                    enhancer = QueryEnhancer()
+                    cached_answers = enhancer.normalize_cached_answers(request.questions, cached_answers)
+                except Exception as _e:
+                    print(f"⚠️ Cached answer normalization failed, using originals: {_e}")
                 
                 total_time = time.time() - total_start_time
                 print(f"🏁 Similarity search completed in {similarity_time:.2f}s")
@@ -172,7 +180,15 @@ async def process_document_and_questions(
             else:
                 print(f"🔄 Processing {len(similarity_result['unmatched_questions'])} new questions...")
                 questions_to_process = similarity_result['unmatched_questions']
-                cached_answers = get_answers_for_matched_questions(similarity_result['matched_questions'])
+                # Prepare cached answers sorted by similarity, aligned with their questions, then normalize
+                sorted_matches = sorted(similarity_result['matched_questions'], key=lambda x: x['similarity_score'], reverse=True)
+                cached_answers = [m['answer'] for m in sorted_matches]
+                cached_questions_for_norm = [m['new_question'] for m in sorted_matches]
+                try:
+                    enhancer = QueryEnhancer()
+                    cached_answers = enhancer.normalize_cached_answers(cached_questions_for_norm, cached_answers)
+                except Exception as _e:
+                    print(f"⚠️ Cached answer normalization failed (partial), using originals: {_e}")
         else:
             if similarity_result['document_matched']:
                 print(f"❌ Document found but no similar questions. Processing all {len(request.questions)} questions...")
