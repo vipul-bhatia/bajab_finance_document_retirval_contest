@@ -27,18 +27,18 @@ class DocumentProcessor:
         """
         AVERAGE_CHARS_PER_PAGE = 1800  # heuristic for plain text
         pages = page_count if (page_count and page_count > 0) else max(1, total_characters // AVERAGE_CHARS_PER_PAGE)
-
+        print(f"pages: {pages}")
         # Piecewise scaling of chunk size by document length
         if pages <= 80:
-            chunk_size = 1200
+            chunk_size = 1100
         elif pages <= 120:
-            chunk_size = 1300
+            chunk_size = 1200
         elif pages <= 250:
-            chunk_size = 1400
+            chunk_size = 1300
         elif pages <= 500:
-            chunk_size = 1500
+            chunk_size = 1400
         else:
-            chunk_size = 1500
+            chunk_size = 1400
 
         # Overlap ~7% of chunk size, with sensible bounds
         overlap = max(100, min(600, int(chunk_size * 0.07)))
