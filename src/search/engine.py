@@ -190,56 +190,41 @@ class SearchEngine:
 
         # print('all_search_resultssss', all_search_results)
         
-        # Step 3: Generate answers for all queries using a single batch LLM call
+        # Step 3: Generate answers for all queries in parallel
         answer_start = time.time()
+        answers = []
         
-        # Prepare inputs for batch: collect only those with results and keep mapping
-        batch_queries = []
-        batch_results = []
-        index_mapping = []  # maps batch index -> original index
-        fallbacks_by_index = {}
-        
-        for idx, (question, search_results) in enumerate(zip(questions, all_search_results)):
-            if search_results:
-                batch_queries.append(question)
-                batch_results.append(search_results)
-                index_mapping.append(idx)
-            else:
-                fallbacks_by_index[idx] = "No relevant information found for this query."
-
-        if batch_queries:
-            try:
-                batch_answers = self.query_enhancer.get_batch_answers(batch_queries, batch_results)
-            except Exception as e:
-                print(f"   ❌ Batch answer generation failed: {e}. Falling back to per-question parallel calls.")
-                # Fallback to previous parallel approach if batch fails
-                batch_answers = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                    answer_futures = []
-                    for i, (question, search_results) in enumerate(zip(batch_queries, batch_results)):
-                        future = executor.submit(self.query_enhancer.get_most_relevant_chunk, question, search_results)
-                        answer_futures.append((future, i))
-                    partial = {}
-                    for future, bidx in answer_futures:
-                        try:
-                            response = future.result()
-                            partial[bidx] = response.get('answer', 'Unable to generate answer.') if response else 'Unable to generate answer.'
-                        except Exception as ee:
-                            partial[bidx] = f"Error generating answer: {str(ee)}"
-                    batch_answers = [partial.get(i, 'Unable to generate answer.') for i in range(len(batch_queries))]
-        else:
-            batch_answers = []
-
-        # Merge results back to original order
-        final_answers = [None] * len(questions)
-        for bidx, ans in enumerate(batch_answers):
-            original_idx = index_mapping[bidx]
-            final_answers[original_idx] = ans
-        for idx, msg in fallbacks_by_index.items():
-            final_answers[idx] = msg
-        for i in range(len(final_answers)):
-            if final_answers[i] is None:
-                final_answers[i] = "Unable to process this query."
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            answer_futures = []
+            
+            for i, (question, search_results) in enumerate(zip(questions, all_search_results)):
+                if search_results:
+                    future = executor.submit(self.query_enhancer.get_most_relevant_chunk, question, search_results)
+                    answer_futures.append((future, i))
+                else:
+                    answers.append(f"No relevant information found for this query.")
+            
+            # Collect answers in order
+            answers_by_index = {}
+            for future, query_index in answer_futures:
+                try:
+                    response = future.result()
+                    answer = response.get('answer', 'Unable to generate answer.') if response else 'Unable to generate answer.'
+                    answers_by_index[query_index] = answer
+                    print(f"   ✅ Answer {query_index + 1}: Generated")
+                except Exception as e:
+                    print(f"   ❌ Answer {query_index + 1} generation failed: {e}")
+                    answers_by_index[query_index] = f"Error generating answer: {str(e)}"
+            
+            # Fill in answers that were processed
+            final_answers = []
+            for i in range(len(questions)):
+                if i in answers_by_index:
+                    final_answers.append(answers_by_index[i])
+                elif i < len(answers):
+                    final_answers.append(answers[i])  # No search results case
+                else:
+                    final_answers.append("Unable to process this query.")
         
         answer_time = time.time() - answer_start
         total_time = time.time() - total_start
