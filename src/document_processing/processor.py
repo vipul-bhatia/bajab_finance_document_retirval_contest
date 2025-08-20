@@ -152,9 +152,9 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
             parsed_url = urlparse(url)
             file_extension = os.path.splitext(parsed_url.path)[1].lower().replace('.', '')
 
-            # Special-case: secret-token endpoint returns text; treat as plain text
-            if 'register.hackrx.in' in parsed_url.netloc and 'get-secret-token' in parsed_url.path:
-                file_extension = 'txt'
+            # # Special-case: secret-token endpoint returns text; treat as plain text
+            # if 'register.hackrx.in' in parsed_url.netloc and 'get-secret-token' in parsed_url.path:
+            #     file_extension = 'txt'
 
             if not file_extension:
                 # Try to get extension from Content-Type
@@ -234,14 +234,19 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
             List of document chunks or None if failed
         """
         try:
+
+            print("I am in this function")
             # Get file extension to pass to the processing function
             parsed_url = urlparse(url)
             file_extension = os.path.splitext(parsed_url.path)[1].lower().replace('.', '')
+
+            print("file extension",file_extension)
             
             # Special-case: secret-token endpoint returns text; treat as plain text
-            if 'register.hackrx.in' in parsed_url.netloc and 'get-secret-token' in parsed_url.path:
-                file_extension = 'txt'
+            # if 'register.hackrx.in' in parsed_url.netloc and 'get-secret-token' in parsed_url.path:
+            #     file_extension = 'txt'
             if not file_extension:
+                print("I am in this")
                 # Try to get extension from Content-Type
                 response = requests.head(url, timeout=30, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"})
                 content_type = response.headers.get('content-type', '').lower()
@@ -254,6 +259,7 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
                 elif 'text/plain' in content_type:
                     file_extension = 'txt'
                 elif 'text/html' in content_type or 'application/xhtml' in content_type:
+                    print("I am in this 2")
                     file_extension = 'html'
                 else:
                     file_extension = 'txt'  # Default to text for safety
