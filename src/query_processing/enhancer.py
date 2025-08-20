@@ -179,3 +179,129 @@ Your response:
                 "source_chunks": [r.get("chunk_index") for r in search_results] if search_results else [],
                 "total_chunks_analyzed": len(search_results) if search_results else 0
             }
+
+    def get_batch_answers(
+        self,
+        queries: List[str],
+        all_search_results: List[List[Dict[str, Any]]]
+    ) -> List[str]:
+        """Generate answers for multiple queries in a single model call.
+
+        The method expects queries and their corresponding search results (same order and length).
+        It constructs a single prompt that contains all query-context pairs and asks the model
+        to return answers in order. If any query has no context, the model is instructed to state
+        that no relevant information was found.
+
+        Returns a list of answers aligned with the input order.
+        """
+        try:
+            if not queries:
+                return []
+
+            def format_context(results: List[Dict[str, Any]]) -> str:
+                if not results:
+                    return ""
+                parts = []
+                for idx, r in enumerate(results, 1):
+                    text = r.get("text", "")
+                    src_q = r.get("source_query")
+                    context_block = f"Context {idx}: {text}\n"
+                    if src_q is not None:
+                        context_block += f"[via sub-query: {src_q}]\n"
+                    parts.append(context_block)
+                return "\n".join(parts)
+
+            combined_sections = []
+            for i, (q, results) in enumerate(zip(queries, all_search_results), start=1):
+                combined_sections.append(
+                    f"Q{i}: {q}\nRetrieved Information:\n{format_context(results)}\n"
+                )
+
+            system_msg = {
+                "role": "system",
+                "content": (
+                    "You are an expert AI assistant specializing in information extraction. "
+                    "Answer multiple queries in a single response. For each query, provide a direct, concise answer "
+                    "based strictly on the provided context. If the context does not contain the answer, say that the "
+                    "information is not available in the provided text."
+                )
+            }
+
+            user_msg = {
+                "role": "user",
+                "content": (
+                    "You will receive multiple queries with their retrieved information. "
+                    "Respond with a JSON array of answers, in the same order as the queries. "
+                    "Each element must be an object with the shape {\"index\": <number starting at 1>, \"answer\": \"...\"}.\n\n" 
+                    + "\n\n".join(combined_sections)
+                )
+            }
+
+            messages = [system_msg, user_msg]
+
+            # Allow the model to optionally use tooling; loop until we get text
+            while True:
+                resp = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    functions=self.functions,
+                    function_call="auto",
+                    max_completion_tokens=1800,
+                )
+                msg = resp.choices[0].message
+
+                if hasattr(msg, "function_call") and msg.function_call is not None:
+                    fn_name = msg.function_call.name
+                    fn_args = json.loads(msg.function_call.arguments)
+                    result = call_tool_get_data(
+                        url=fn_args.get("url", ""),
+                        timeout=fn_args.get("timeout", 60)
+                    ) or {}
+
+                    messages.append(
+                        {"role": "assistant", "content": None, "function_call": {
+                            "name": fn_name,
+                            "arguments": msg.function_call.arguments
+                        }}
+                    )
+                    messages.append(
+                        {"role": "function", "name": fn_name, "content": json.dumps(result)}
+                    )
+                    continue
+
+                content = (msg.content or "").strip()
+                break
+
+            # Try to parse JSON array from content
+            answers: List[str] = ["Unable to generate answer."] * len(queries)
+            try:
+                # Extract JSON array if content contains additional prose
+                start = content.find("[")
+                end = content.rfind("]")
+                json_str = content[start:end+1] if start != -1 and end != -1 else content
+                parsed = json.loads(json_str)
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        if not isinstance(item, dict):
+                            continue
+                        idx = int(item.get("index", 0))
+                        ans = item.get("answer", "Unable to generate answer.")
+                        if 1 <= idx <= len(queries):
+                            answers[idx - 1] = ans
+            except Exception:
+                # Fallback: naive split by lines prefixed with numbering
+                lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+                current_idx = 0
+                for ln in lines:
+                    if current_idx >= len(queries):
+                        break
+                    answers[current_idx] = ln
+                    current_idx += 1
+
+            return answers
+        except Exception as e:
+            # On any error, return generic messages while preserving order
+            return [
+                f"Sorry, I encountered an error while processing your query: {str(e)}"
+                for _ in queries
+            ]
