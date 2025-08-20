@@ -284,7 +284,7 @@ For ANY query, always include:
         # Split into batches and process concurrently
         batches = [queries[i:i+BATCH_SIZE] for i in range(0, len(queries), BATCH_SIZE)]
         all_results = [[] for _ in range(len(queries))]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(batches))) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(25, len(batches))) as executor:
             future_to_batch_idx = {
                 executor.submit(self._batch_analyze_and_decompose, batch): batch_idx
                 for batch_idx, batch in enumerate(batches)
