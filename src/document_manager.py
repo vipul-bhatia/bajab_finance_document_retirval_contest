@@ -1,17 +1,23 @@
 import os
 import hashlib
 import json
+import time
+import concurrent.futures
+from typing import List
 from .config import DOCUMENT_PATH
 from .document_processing import DocumentProcessor
 from .database import DatabaseManager
 from .search import SearchEngine
+from .search.bm25_search import BM25SearchEngine
+from .logging import get_hybrid_logger
 
 
 class DocumentManager:
     """Main class that orchestrates document processing, embedding storage, and search"""
 
     def __init__(self):
-        self.search_engine = SearchEngine()
+        self.search_engine = SearchEngine()  # FAISS-based search
+        self.bm25_engine = None  # BM25-based search
         self.current_document = None
 
     def initialize_document_from_url(self, document_url: str, chunk_size: int = None):
@@ -81,9 +87,24 @@ class DocumentManager:
 
         search_load_start = time.time()
         self.search_engine.load_embeddings(faiss_index, chunks, document_name)
-        self.current_document = document_name
         search_load_time = time.time() - search_load_start
         timing_data['search_engine_load'] = round(search_load_time, 2)
+        
+        # Load or build BM25 index
+        bm25_start = time.time()
+        if DatabaseManager.bm25_index_exists(document_name, chunk_count):
+            print(f"   💾 Loading existing BM25 index from disk...")
+            self.bm25_engine = DatabaseManager.load_bm25_index(document_name)
+        else:
+            print(f"   🔄 Generating new BM25 index...")
+            DatabaseManager.store_bm25_index(chunks, document_name)
+            self.bm25_engine = DatabaseManager.load_bm25_index(document_name)
+        
+        bm25_time = time.time() - bm25_start
+        timing_data['bm25_load'] = round(bm25_time, 2)
+        print(f"   ✅ BM25 index load: {bm25_time:.2f}s")
+        
+        self.current_document = document_name
 
         total_time = time.time() - total_start
         timing_data['total_initialization'] = round(total_time, 2)
@@ -118,6 +139,16 @@ class DocumentManager:
             faiss_index = DatabaseManager.load_faiss_index(document_name)
         
         self.search_engine.load_embeddings(faiss_index, chunks, document_name)
+        
+        # Load or build BM25 index
+        if DatabaseManager.bm25_index_exists(document_name, chunk_count):
+            print(f"✅ BM25 index already exists, loading from disk...")
+            self.bm25_engine = DatabaseManager.load_bm25_index(document_name)
+        else:
+            print(f"🔄 Generating new BM25 index for {document_name}...")
+            DatabaseManager.store_bm25_index(chunks, document_name)
+            self.bm25_engine = DatabaseManager.load_bm25_index(document_name)
+        
         self.current_document = document_name
         
         return True, document_name
@@ -144,12 +175,447 @@ class DocumentManager:
         
         return self.search_engine.process_multiple_queries(questions)
     
+    def get_bm25_results(self, query: str, top_k: int = 10):
+        """
+        Get BM25 search results for a query
+        
+        Args:
+            query: Search query string
+            top_k: Number of top results to return
+            
+        Returns:
+            List of BM25 search results with scores and text
+        """
+        if not self.current_document:
+            raise RuntimeError("No document loaded. Call initialize_document() first.")
+        
+        if not self.bm25_engine:
+            raise RuntimeError("BM25 engine not initialized.")
+        
+        return self.bm25_engine.search(query, top_k)
+    
+    def get_parallel_search_results(self, query: str, top_k: int = 10):
+        """
+        Get search results from both FAISS and BM25 engines in parallel
+        
+        Args:
+            query: Search query string
+            top_k: Number of top results to return from each engine
+            
+        Returns:
+            Dictionary with 'faiss_results' and 'bm25_results' keys
+        """
+        if not self.current_document:
+            raise RuntimeError("No document loaded. Call initialize_document() first.")
+        
+        if not self.bm25_engine:
+            raise RuntimeError("BM25 engine not initialized.")
+        
+        import concurrent.futures
+        import time
+        
+        print(f"🔍 Running parallel search: FAISS + BM25 for query: '{query}'")
+        search_start = time.time()
+        
+        def get_faiss_results():
+            return self.search_engine.find_relevant_chunks(query, top_k)
+        
+        def get_bm25_results():
+            return self.bm25_engine.search(query, top_k)
+        
+        # Execute both searches in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            faiss_future = executor.submit(get_faiss_results)
+            bm25_future = executor.submit(get_bm25_results)
+            
+            faiss_results = faiss_future.result()
+            bm25_results = bm25_future.result()
+        
+        search_time = time.time() - search_start
+        
+        print(f"📊 Parallel search completed in {search_time:.3f}s")
+        print(f"   • FAISS results: {len(faiss_results)}")
+        print(f"   • BM25 results: {len(bm25_results)}")
+        
+        return {
+            'faiss_results': faiss_results,
+            'bm25_results': bm25_results,
+            'search_time': search_time
+        }
+    
     def get_document_info(self):
         """Get information about the currently loaded document"""
         if not self.current_document:
             return None
         
-        return {
+        info = {
             "name": self.current_document,
-            "chunk_count": len(self.search_engine.document_chunks)
-        } 
+            "chunk_count": len(self.search_engine.document_chunks),
+            "faiss_loaded": self.search_engine.faiss_index is not None,
+            "bm25_loaded": self.bm25_engine is not None
+        }
+        
+        if self.bm25_engine:
+            bm25_stats = self.bm25_engine.get_index_stats()
+            info["bm25_stats"] = bm25_stats
+        
+        return info
+    
+    def get_hybrid_search_results(
+        self,
+        query: str,
+        top_k_per_engine: int = 20,
+        final_top_k: int = 10,
+        use_mmr: bool = True,
+        bm25_weight: float = 0.5,
+        faiss_weight: float = 0.5
+    ) -> dict:
+        """
+        Get hybrid search results using RRF fusion of FAISS and BM25
+        
+        Args:
+            query: Search query string
+            top_k_per_engine: Results to get from each engine before fusion
+            final_top_k: Final number of fused results to return
+            use_mmr: Whether to apply MMR for diversity
+            bm25_weight: Weight for BM25 results (0.0 to 1.0)
+            faiss_weight: Weight for FAISS results (0.0 to 1.0)
+            
+        Returns:
+            Dictionary with hybrid search results and metadata
+        """
+        if not self.current_document:
+            raise RuntimeError("No document loaded. Call initialize_document() first.")
+        
+        if not self.bm25_engine:
+            raise RuntimeError("BM25 engine not initialized.")
+        
+        return self.search_engine.hybrid_search_with_rrf(
+            bm25_engine=self.bm25_engine,
+            query=query,
+            top_k_per_engine=top_k_per_engine,
+            final_top_k=final_top_k,
+            use_mmr=use_mmr,
+            bm25_weight=bm25_weight,
+            faiss_weight=faiss_weight
+        )
+    
+    def get_intelligent_hybrid_results(
+        self,
+        query: str,
+        final_top_k: int = 10,
+        use_mmr: bool = True
+    ) -> dict:
+        """
+        Get intelligent hybrid search results with query decomposition and RRF fusion
+        
+        Args:
+            query: Search query string (can be complex)
+            final_top_k: Final number of fused results to return
+            use_mmr: Whether to apply MMR for diversity
+            
+        Returns:
+            Dictionary with hybrid search results and metadata
+        """
+        if not self.current_document:
+            raise RuntimeError("No document loaded. Call initialize_document() first.")
+        
+        if not self.bm25_engine:
+            raise RuntimeError("BM25 engine not initialized.")
+        
+        return self.search_engine.intelligent_hybrid_search(
+            bm25_engine=self.bm25_engine,
+            query=query,
+            final_top_k=final_top_k,
+            use_mmr=use_mmr
+        )
+    
+    def get_best_hybrid_answer(
+        self,
+        query: str,
+        use_intelligent_search: bool = True,
+        final_top_k: int = 10
+    ) -> dict:
+        """
+        Get the best answer using hybrid search with RRF fusion
+        
+        Args:
+            query: User query
+            use_intelligent_search: Whether to use intelligent query decomposition
+            final_top_k: Number of chunks to consider for answer generation
+            
+        Returns:
+            Response with answer and hybrid search metadata
+        """
+        if not self.current_document:
+            raise RuntimeError("No document loaded. Call initialize_document() first.")
+        
+        if not self.bm25_engine:
+            raise RuntimeError("BM25 engine not initialized.")
+        
+        return self.search_engine.get_best_hybrid_answer(
+            bm25_engine=self.bm25_engine,
+            query=query,
+            use_intelligent_search=use_intelligent_search,
+            final_top_k=final_top_k
+        )
+    
+    def process_multiple_queries_hybrid(
+        self,
+        questions: List[str],
+        use_intelligent_search: bool = True,
+        final_top_k: int = 10
+    ) -> List[str]:
+        """
+        Process multiple queries using hybrid search with RRF fusion
+        
+        Args:
+            questions: List of user queries
+            use_intelligent_search: Whether to use intelligent query decomposition
+            final_top_k: Number of chunks per query for answer generation
+            
+        Returns:
+            List of answers corresponding to each question
+        """
+        if not self.current_document:
+            raise RuntimeError("No document loaded. Call initialize_document() first.")
+        
+        if not self.bm25_engine:
+            raise RuntimeError("BM25 engine not initialized.")
+        
+        import concurrent.futures
+        
+        total_start = time.time()
+        
+        # Initialize hybrid logger
+        logger = get_hybrid_logger()
+        logger.start_session(self.current_document, len(questions))
+        logger.log_document_info(self.get_document_info())
+        
+        print(f"🎯 Processing {len(questions)} queries with Hybrid Search (RRF)...")
+        print(f"📝 Detailed logging enabled - check hybrid_search_logs/ directory")
+        
+        # Process all queries in TRUE PARALLEL with detailed logging
+        answers = [None] * len(questions)  # Pre-allocate to maintain order
+        
+        try:
+            # Start logging for all questions
+            for i, question in enumerate(questions):
+                logger.log_question_start(i, question)
+            
+            # Execute all questions in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = []
+                
+                for i, question in enumerate(questions):
+                    future = executor.submit(
+                        self._get_hybrid_answer_with_logging, 
+                        question, i, use_intelligent_search, final_top_k, logger
+                    )
+                    futures.append((future, i))
+                
+                print(f"🚀 Processing {len(questions)} questions in parallel...")
+                
+                # Collect results as they complete (maintaining order)
+                for future in concurrent.futures.as_completed([f[0] for f in futures]):
+                    # Find the question index for this future
+                    question_index = None
+                    for f, i in futures:
+                        if f == future:
+                            question_index = i
+                            break
+                    
+                    if question_index is None:
+                        continue
+                    
+                    question_start_time = time.time()
+                    
+                    try:
+                        # Get hybrid search results with detailed component tracking
+                        response = future.result()
+                        
+                        if response:
+                            answer = response.get('answer', 'Unable to generate answer.')
+                            answers[question_index] = answer
+                            print(f"   ✅ Hybrid Answer {question_index + 1}: Generated ({len(answer)} chars)")
+                        else:
+                            answer = 'No relevant information found.'
+                            answers[question_index] = answer
+                            print(f"   ⚠️  Hybrid Answer {question_index + 1}: No results")
+                        
+                        # Log final results
+                        if response and 'hybrid_search_metadata' in response:
+                            metadata = response['hybrid_search_metadata']
+                            final_results = metadata.get('results', [])
+                            logger.log_final_results(question_index, final_results, answer)
+                        
+                        # Log performance metrics
+                        question_time = time.time() - question_start_time
+                        logger.log_performance_metrics(question_index, question_time)
+                        
+                    except Exception as e:
+                        error_msg = f"Error generating answer: {str(e)}"
+                        answers[question_index] = error_msg
+                        print(f"   ❌ Hybrid Answer {question_index + 1} failed: {e}")
+                        
+                        # Log the error
+                        logger.log_final_results(question_index, [], error_msg)
+                        question_time = time.time() - question_start_time
+                        logger.log_performance_metrics(question_index, question_time)
+                
+                # Verify all questions were processed
+                if None in answers:
+                    print("⚠️  Warning: Some questions may not have been processed")
+                    for i, answer in enumerate(answers):
+                        if answer is None:
+                            answers[i] = "Question processing failed or timed out"
+        
+        finally:
+            # End logging session
+            logger.end_session()
+        
+        total_time = time.time() - total_start
+        
+        successful_answers = len([a for a in answers if not a.startswith('Error') and not a.startswith('Unable') and not a.startswith('No relevant')])
+        
+        print(f"\n📊 HYBRID BATCH PROCESSING COMPLETE:")
+        print(f"   • Total Queries: {len(questions)}")
+        print(f"   • Successful Answers: {successful_answers}")
+        print(f"   • Total Time: {total_time:.2f}s")
+        print(f"   • Average Time per Query: {total_time/len(questions):.2f}s")
+        print(f"📋 Detailed logs available:")
+        print(logger.get_log_files_info())
+        
+        return answers
+    
+    def _get_hybrid_answer_with_logging(
+        self,
+        question: str,
+        question_index: int,
+        use_intelligent_search: bool,
+        final_top_k: int,
+        logger
+    ) -> dict:
+        """Get hybrid answer with detailed component logging and TRUE parallel execution"""
+        
+        import concurrent.futures
+        
+        # Step 1: Run FAISS and BM25 in TRUE PARALLEL
+        parallel_start = time.time()
+        
+        def run_faiss_with_timing():
+            faiss_start = time.time()
+            results = self.search_engine.find_relevant_chunks(question, top_k=20)
+            faiss_time = time.time() - faiss_start
+            return results, faiss_time
+        
+        def run_bm25_with_timing():
+            bm25_start = time.time()
+            results = self.bm25_engine.search(question, top_k=20)
+            bm25_time = time.time() - bm25_start
+            return results, bm25_time
+        
+        # Execute FAISS and BM25 in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            faiss_future = executor.submit(run_faiss_with_timing)
+            bm25_future = executor.submit(run_bm25_with_timing)
+            
+            faiss_results, faiss_time = faiss_future.result()
+            bm25_results, bm25_time = bm25_future.result()
+        
+        parallel_time = time.time() - parallel_start
+        
+        # Log individual search results with their timings
+        logger.log_faiss_results(question_index, faiss_results, faiss_time)
+        logger.log_bm25_results(question_index, bm25_results, bm25_time)
+        
+        # Log parallel execution summary
+        max_search_time = max(faiss_time, bm25_time)
+        parallel_efficiency = (faiss_time + bm25_time) / parallel_time if parallel_time > 0 else 1
+        
+        logger.hybrid_logger.info(
+            f"PARALLEL SEARCH SUMMARY:\n"
+            f"  • FAISS Time: {faiss_time:.3f}s\n"
+            f"  • BM25 Time: {bm25_time:.3f}s\n"
+            f"  • Parallel Wall Time: {parallel_time:.3f}s\n"
+            f"  • Sequential Would Take: {faiss_time + bm25_time:.3f}s\n"
+            f"  • Time Saved: {(faiss_time + bm25_time) - parallel_time:.3f}s\n"
+            f"  • Parallel Efficiency: {parallel_efficiency:.1f}x speedup\n"
+            f"  • Bottleneck: {'FAISS' if faiss_time > bm25_time else 'BM25'}"
+        )
+        
+        # Step 2: Apply RRF fusion using the parallel results
+        fusion_start = time.time()
+        
+        # Use RRF fusion directly instead of calling intelligent_hybrid_search again
+        from .search.rrf_fusion import RRFFusion, HybridSearchEngine
+        
+        if not hasattr(self, '_hybrid_engine'):
+            self._hybrid_engine = HybridSearchEngine()
+        
+        # Apply RRF fusion to the parallel results
+        fused_results = self._hybrid_engine.rrf_fusion.fuse_rankings(
+            bm25_results, faiss_results, final_top_k * 2
+        )
+        
+        # Apply MMR if needed
+        final_results = fused_results
+        if len(fused_results) > final_top_k:
+            final_results = self._hybrid_engine.mmr_processor.apply_mmr(fused_results, final_top_k)
+        else:
+            final_results = fused_results[:final_top_k]
+        
+        fusion_time = time.time() - fusion_start
+        
+        # Create search results metadata
+        search_results = {
+            'results': final_results,
+            'metadata': {
+                'query': question,
+                'faiss_results_count': len(faiss_results),
+                'bm25_results_count': len(bm25_results),
+                'final_results_count': len(final_results),
+                'timing': {
+                    'faiss_search': faiss_time,
+                    'bm25_search': bm25_time,
+                    'parallel_search': parallel_time,
+                    'fusion': fusion_time,
+                    'total': parallel_time + fusion_time
+                },
+                'parallel_execution': {
+                    'sequential_time': faiss_time + bm25_time,
+                    'parallel_time': parallel_time,
+                    'time_saved': (faiss_time + bm25_time) - parallel_time,
+                    'speedup': parallel_efficiency,
+                    'bottleneck': 'FAISS' if faiss_time > bm25_time else 'BM25'
+                }
+            }
+        }
+        
+        # Log RRF fusion details
+        logger.log_rrf_fusion(question_index, search_results['metadata'], fusion_time)
+        
+        # Step 3: Generate answer
+        hybrid_results = final_results
+        if not hybrid_results:
+            return None
+        
+        # Convert to format expected by query enhancer
+        chunks_for_answer = []
+        for result in hybrid_results:
+            chunk_data = {
+                'chunk_index': result['chunk_index'],
+                'text': result['text'],
+                'score': result.get('rrf_score', result.get('weighted_rrf_score', 0))
+            }
+            chunks_for_answer.append(chunk_data)
+        
+        # Generate answer
+        response = self.search_engine.query_enhancer.get_most_relevant_chunk(question, chunks_for_answer)
+        
+        if response:
+            # Enhance response with hybrid search metadata
+            response['hybrid_search_metadata'] = search_results['metadata']
+            response['hybrid_search_metadata']['results'] = hybrid_results
+        
+        return response 

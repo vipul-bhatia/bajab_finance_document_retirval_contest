@@ -209,11 +209,20 @@ async def process_document_and_questions(
         # Step 2: Get document info and embedding stats
         doc_info = document_manager.get_document_info()
         print(f"📄 Document ready: {doc_info['chunk_count']} chunks loaded")
+        print(f"🔍 Search engines loaded: FAISS={doc_info.get('faiss_loaded', False)}, BM25={doc_info.get('bm25_loaded', False)}")
+        if doc_info.get('bm25_stats'):
+            bm25_stats = doc_info['bm25_stats']
+            print(f"📊 BM25 Index: {bm25_stats.get('vocabulary_size', 'N/A')} terms, avg doc length: {bm25_stats.get('average_document_length', 'N/A'):.1f}")
+        print(f"🚀 Using Hybrid Search: RRF fusion of FAISS (semantic) + BM25 (keyword) with intelligent query processing")
         
-        # Step 3: Process unmatched questions
+        # Step 3: Process unmatched questions with Hybrid Search (RRF)
         query_start = time.time()
-        print(f"🎯 Step 2: Processing {len(questions_to_process)} new questions...")
-        new_answers = document_manager.process_multiple_queries(questions_to_process)
+        print(f"🎯 Step 2: Processing {len(questions_to_process)} new questions with Hybrid Search (FAISS + BM25 + RRF)...")
+        new_answers = document_manager.process_multiple_queries_hybrid(
+            questions_to_process,
+            use_intelligent_search=True,  # Enable intelligent query decomposition
+            final_top_k=10               # Consider top 10 chunks per query
+        )
         query_time = time.time() - query_start
         
         # Combine cached and new answers
@@ -221,7 +230,7 @@ async def process_document_and_questions(
         
         total_time = time.time() - total_start_time
         
-        print(f"🏁 All questions processed in {query_time:.2f}s")
+        print(f"🏁 All questions processed with Hybrid Search in {query_time:.2f}s")
         print(f"🏁 Total pipeline time: {total_time:.2f}s")
         
         # Print comprehensive timing summary
@@ -229,11 +238,14 @@ async def process_document_and_questions(
         print(f"   • Similarity Search: {similarity_time:.2f}s")
         print(f"   • Document Download & Processing: {timing_data.get('download_and_processing', 0):.2f}s")
         if 'embedding_generation' in timing_data:
-            print(f"   • Embedding Generation: {timing_data['embedding_generation']:.2f}s")
+            print(f"   • FAISS Embedding Generation: {timing_data['embedding_generation']:.2f}s")
+        if 'bm25_load' in timing_data:
+            print(f"   • BM25 Index Generation: {timing_data['bm25_load']:.2f}s")
         print(f"   • Database Operations: {timing_data.get('database_load', 0):.2f}s")
         print(f"   • Search Engine Load: {timing_data.get('search_engine_load', 0):.2f}s")
-        print(f"   • Query Processing: {query_time:.2f}s")
+        print(f"   • Hybrid Query Processing (FAISS+BM25+RRF): {query_time:.2f}s")
         print(f"   • Total Pipeline: {total_time:.2f}s")
+        print(f"🎯 Search Method: Hybrid RRF Fusion (FAISS semantic + BM25 keyword + intelligent decomposition)")
         
         # Print similarity search results if any matches were found
         if similarity_result['found_similar']:
