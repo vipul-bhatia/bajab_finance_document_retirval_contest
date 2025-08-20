@@ -158,7 +158,7 @@ class SearchEngine:
         search_start = time.time()
         all_search_results = []
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=25) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             search_futures = []
             
             for i, search_queries in enumerate(query_search_lists):
@@ -194,7 +194,7 @@ class SearchEngine:
         answer_start = time.time()
         answers = []
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=25) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             answer_futures = []
             
             for i, (question, search_results) in enumerate(zip(questions, all_search_results)):
