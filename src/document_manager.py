@@ -403,6 +403,20 @@ class DocumentManager:
             for i, question in enumerate(questions):
                 logger.log_question_start(i, question)
             
+            # OPTIMIZATION: Use batch query analysis for multiple questions when intelligent search is enabled
+            if use_intelligent_search and len(questions) > 1:
+                print(f"🧠 Batch analyzing {len(questions)} questions for intelligent decomposition...")
+                batch_start = time.time()
+                
+                # Use batch processing for query analysis
+                all_decomposed_queries = self.search_engine.query_analyzer.process_multiple_queries(questions)
+                batch_analysis_time = time.time() - batch_start
+                
+                print(f"✅ Batch analysis completed in {batch_analysis_time:.3f}s")
+                print(f"📊 Query decomposition summary:")
+                for i, decomposed in enumerate(all_decomposed_queries):
+                    print(f"   Question {i+1}: {len(decomposed)} sub-queries")
+            
             # Execute all questions in parallel
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 futures = []
@@ -500,49 +514,123 @@ class DocumentManager:
         
         import concurrent.futures
         
-        # Step 1: Run FAISS and BM25 in TRUE PARALLEL
-        parallel_start = time.time()
+        # Step 1: Query Analysis and Decomposition (INTELLIGENT SEARCH)
+        analysis_start = time.time()
         
-        def run_faiss_with_timing():
-            faiss_start = time.time()
-            results = self.search_engine.find_relevant_chunks(question, top_k=20)
-            faiss_time = time.time() - faiss_start
-            return results, faiss_time
-        
-        def run_bm25_with_timing():
-            bm25_start = time.time()
-            results = self.bm25_engine.search(question, top_k=20)
-            bm25_time = time.time() - bm25_start
-            return results, bm25_time
-        
-        # Execute FAISS and BM25 in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            faiss_future = executor.submit(run_faiss_with_timing)
-            bm25_future = executor.submit(run_bm25_with_timing)
+        if use_intelligent_search:
+            # Use QueryAnalyzer batch processing for efficient decomposition
+            # Note: This is a single question, but we'll use the batch interface for consistency
+            search_queries = self.search_engine.query_analyzer.process_multiple_queries([question])[0]
+            print(f"🧠 Question {question_index + 1}: Query decomposed into {len(search_queries)} components")
             
-            faiss_results, faiss_time = faiss_future.result()
-            bm25_results, bm25_time = bm25_future.result()
+            # Execute parallel searches for decomposed queries
+            all_faiss_results = []
+            all_bm25_results = []
+            
+            # Search each decomposed query in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(search_queries))) as executor:
+                faiss_futures = []
+                bm25_futures = []
+                
+                for sub_query in search_queries:
+                    faiss_future = executor.submit(self.search_engine.find_relevant_chunks, sub_query, top_k=20)
+                    bm25_future = executor.submit(self.bm25_engine.search, sub_query, top_k=20)
+                    faiss_futures.append((faiss_future, sub_query))
+                    bm25_futures.append((bm25_future, sub_query))
+                
+                # Collect FAISS results
+                for future, sub_query in faiss_futures:
+                    try:
+                        results = future.result()
+                        for result in results:
+                            result['source_query'] = sub_query
+                        all_faiss_results.extend(results)
+                    except Exception as e:
+                        print(f"   ⚠️ FAISS search failed for sub-query '{sub_query}': {e}")
+                
+                # Collect BM25 results
+                for future, sub_query in bm25_futures:
+                    try:
+                        results = future.result()
+                        for result in results:
+                            result['source_query'] = sub_query
+                        all_bm25_results.extend(results)
+                    except Exception as e:
+                        print(f"   ⚠️ BM25 search failed for sub-query '{sub_query}': {e}")
+            
+            faiss_results = all_faiss_results
+            bm25_results = all_bm25_results
+            
+            # For intelligent search, we need to calculate timing
+            faiss_time = 0.0  # Will be calculated from individual searches
+            bm25_time = 0.0   # Will be calculated from individual searches
+            # Calculate total time for intelligent search (analysis + search)
+            search_end = time.time()
+            parallel_time = search_end - analysis_start
+            
+        else:
+            # Simple search - single query
+            search_queries = [question]
+            print(f"🧠 Question {question_index + 1}: Using simple search (no decomposition)")
+            
+            # Run FAISS and BM25 in parallel for single query
+            parallel_start = time.time()
+            
+            def run_faiss_with_timing():
+                faiss_start = time.time()
+                results = self.search_engine.find_relevant_chunks(question, top_k=20)
+                faiss_time = time.time() - faiss_start
+                return results, faiss_time
+            
+            def run_bm25_with_timing():
+                bm25_start = time.time()
+                results = self.bm25_engine.search(question, top_k=20)
+                bm25_time = time.time() - bm25_start
+                return results, bm25_time
+            
+            # Execute FAISS and BM25 in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                faiss_future = executor.submit(run_faiss_with_timing)
+                bm25_future = executor.submit(run_bm25_with_timing)
+                
+                faiss_results, faiss_time = faiss_future.result()
+                bm25_results, bm25_time = bm25_future.result()
+            
+            parallel_time = time.time() - parallel_start
         
-        parallel_time = time.time() - parallel_start
+        analysis_time = time.time() - analysis_start
         
         # Log individual search results with their timings
         logger.log_faiss_results(question_index, faiss_results, faiss_time)
         logger.log_bm25_results(question_index, bm25_results, bm25_time)
         
-        # Log parallel execution summary
-        max_search_time = max(faiss_time, bm25_time)
-        parallel_efficiency = (faiss_time + bm25_time) / parallel_time if parallel_time > 0 else 1
-        
-        logger.hybrid_logger.info(
-            f"PARALLEL SEARCH SUMMARY:\n"
-            f"  • FAISS Time: {faiss_time:.3f}s\n"
-            f"  • BM25 Time: {bm25_time:.3f}s\n"
-            f"  • Parallel Wall Time: {parallel_time:.3f}s\n"
-            f"  • Sequential Would Take: {faiss_time + bm25_time:.3f}s\n"
-            f"  • Time Saved: {(faiss_time + bm25_time) - parallel_time:.3f}s\n"
-            f"  • Parallel Efficiency: {parallel_efficiency:.1f}x speedup\n"
-            f"  • Bottleneck: {'FAISS' if faiss_time > bm25_time else 'BM25'}"
-        )
+        # Log search strategy and timing
+        if use_intelligent_search:
+            logger.hybrid_logger.info(
+                f"INTELLIGENT SEARCH SUMMARY:\n"
+                f"  • Query Analysis Time: {analysis_time:.3f}s\n"
+                f"  • Sub-queries Generated: {len(search_queries)}\n"
+                f"  • FAISS Results: {len(faiss_results)} chunks\n"
+                f"  • BM25 Results: {len(bm25_results)} chunks\n"
+                f"  • Total Search Time: {parallel_time:.3f}s\n"
+                f"  • Search Strategy: Intelligent decomposition"
+            )
+        else:
+            # Log parallel execution summary for simple search
+            max_search_time = max(faiss_time, bm25_time)
+            parallel_efficiency = (faiss_time + bm25_time) / parallel_time if parallel_time > 0 else 1
+            
+            logger.hybrid_logger.info(
+                f"PARALLEL SEARCH SUMMARY:\n"
+                f"  • FAISS Time: {faiss_time:.3f}s\n"
+                f"  • BM25 Time: {bm25_time:.3f}s\n"
+                f"  • Parallel Wall Time: {parallel_time:.3f}s\n"
+                f"  • Sequential Would Take: {faiss_time + bm25_time:.3f}s\n"
+                f"  • Time Saved: {(faiss_time + bm25_time) - parallel_time:.3f}s\n"
+                f"  • Parallel Efficiency: {parallel_efficiency:.1f}x speedup\n"
+                f"  • Bottleneck: {'FAISS' if faiss_time > bm25_time else 'BM25'}\n"
+                f"  • Search Strategy: Simple parallel search"
+            )
         
         # Step 2: Apply RRF fusion using the parallel results
         fusion_start = time.time()
@@ -572,21 +660,30 @@ class DocumentManager:
             'results': final_results,
             'metadata': {
                 'query': question,
+                'search_strategy': 'intelligent_decomposition' if use_intelligent_search else 'simple_parallel',
+                'sub_queries': search_queries,
                 'faiss_results_count': len(faiss_results),
                 'bm25_results_count': len(bm25_results),
                 'final_results_count': len(final_results),
                 'timing': {
+                    'query_analysis': analysis_time,
                     'faiss_search': faiss_time,
                     'bm25_search': bm25_time,
                     'parallel_search': parallel_time,
                     'fusion': fusion_time,
                     'total': parallel_time + fusion_time
                 },
+                'intelligent_search': {
+                    'enabled': use_intelligent_search,
+                    'sub_queries_count': len(search_queries),
+                    'analysis_time': analysis_time,
+                    'decomposition_ratio': len(search_queries) / 1 if len(search_queries) > 0 else 1
+                },
                 'parallel_execution': {
                     'sequential_time': faiss_time + bm25_time,
                     'parallel_time': parallel_time,
                     'time_saved': (faiss_time + bm25_time) - parallel_time,
-                    'speedup': parallel_efficiency,
+                    'speedup': (faiss_time + bm25_time) / parallel_time if parallel_time > 0 else 1,
                     'bottleneck': 'FAISS' if faiss_time > bm25_time else 'BM25'
                 }
             }
