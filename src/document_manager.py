@@ -153,6 +153,7 @@ class DocumentManager:
         
         return True, document_name
     
+    ###
     def get_best_answer(self, query: str):
         """Get the single best answer for a query"""
         if not self.current_document:
@@ -160,6 +161,7 @@ class DocumentManager:
         
         return self.search_engine.get_best_answer(query)
     
+
     def process_multiple_queries(self, questions: list) -> list:
         """
         Process multiple queries in parallel and return list of answers
@@ -175,6 +177,7 @@ class DocumentManager:
         
         return self.search_engine.process_multiple_queries(questions)
     
+    ###
     def get_bm25_results(self, query: str, top_k: int = 10):
         """
         Get BM25 search results for a query
@@ -194,6 +197,7 @@ class DocumentManager:
         
         return self.bm25_engine.search(query, top_k)
     
+    ####
     def get_parallel_search_results(self, query: str, top_k: int = 10):
         """
         Get search results from both FAISS and BM25 engines in parallel
@@ -261,6 +265,7 @@ class DocumentManager:
         
         return info
     
+    ####
     def get_hybrid_search_results(
         self,
         query: str,
@@ -299,7 +304,7 @@ class DocumentManager:
             bm25_weight=bm25_weight,
             faiss_weight=faiss_weight
         )
-    
+    ####
     def get_intelligent_hybrid_results(
         self,
         query: str,
@@ -329,7 +334,7 @@ class DocumentManager:
             final_top_k=final_top_k,
             use_mmr=use_mmr
         )
-    
+    ####
     def get_best_hybrid_answer(
         self,
         query: str,
@@ -360,6 +365,7 @@ class DocumentManager:
             final_top_k=final_top_k
         )
     
+    #imp
     def process_multiple_queries_hybrid(
         self,
         questions: List[str],
@@ -404,6 +410,7 @@ class DocumentManager:
                 logger.log_question_start(i, question)
             
             # OPTIMIZATION: Use batch query analysis for multiple questions when intelligent search is enabled
+            all_decomposed_queries = None
             if use_intelligent_search and len(questions) > 1:
                 print(f"🧠 Batch analyzing {len(questions)} questions for intelligent decomposition...")
                 batch_start = time.time()
@@ -422,9 +429,11 @@ class DocumentManager:
                 futures = []
                 
                 for i, question in enumerate(questions):
+                    # Pass pre-decomposed queries if available
+                    pre_decomposed = all_decomposed_queries[i] if all_decomposed_queries else None
                     future = executor.submit(
                         self._get_hybrid_answer_with_logging, 
-                        question, i, use_intelligent_search, final_top_k, logger
+                        question, i, use_intelligent_search, final_top_k, logger, pre_decomposed
                     )
                     futures.append((future, i))
                 
@@ -502,13 +511,16 @@ class DocumentManager:
         
         return answers
     
+
+    # most important function of the code calling most of the functions
     def _get_hybrid_answer_with_logging(
         self,
         question: str,
         question_index: int,
         use_intelligent_search: bool,
         final_top_k: int,
-        logger
+        logger,
+        pre_decomposed_queries=None
     ) -> dict:
         """Get hybrid answer with detailed component logging and TRUE parallel execution"""
         
@@ -518,10 +530,14 @@ class DocumentManager:
         analysis_start = time.time()
         
         if use_intelligent_search:
-            # Use QueryAnalyzer batch processing for efficient decomposition
-            # Note: This is a single question, but we'll use the batch interface for consistency
-            search_queries = self.search_engine.query_analyzer.process_multiple_queries([question])[0]
-            print(f"🧠 Question {question_index + 1}: Query decomposed into {len(search_queries)} components")
+            # Use pre-decomposed queries if available, otherwise decompose now
+            if pre_decomposed_queries:
+                search_queries = pre_decomposed_queries
+                print(f"🧠 Question {question_index + 1}: Using pre-decomposed queries ({len(search_queries)} components)")
+            else:
+                # Fall back to individual decomposition
+                search_queries = self.search_engine.query_analyzer.process_multiple_queries([question])[0]
+                print(f"🧠 Question {question_index + 1}: Query decomposed into {len(search_queries)} components")
             
             # Execute parallel searches for decomposed queries
             all_faiss_results = []
