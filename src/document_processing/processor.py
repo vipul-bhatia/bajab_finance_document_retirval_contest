@@ -4,6 +4,8 @@ import os
 import tempfile
 import requests
 import io
+import re
+import nltk
 from urllib.parse import urlparse
 from typing import List, Optional, Tuple
 from ..config import CHUNK_SIZE, CHUNK_OVERLAP
@@ -46,180 +48,7 @@ class DocumentProcessor:
         print(f"   🔧 Dynamic chunking -> pages≈{pages}, chars={total_characters}, chunk_size={chunk_size}, overlap={overlap}")
         return chunk_size, overlap
 
-    @staticmethod
-    def load_document(file_path: str, chunk_size: int = CHUNK_SIZE) -> list:
-        """Load document and split into chunks
-        
-        Required packages:
-        - PyMuPDF: pip install PyMuPDF (much faster than PyPDF2)
-        - python-docx: pip install python-docx
-        - extract-msg: pip install extract-msg
-        """
-        print(f"🔄 Processing document from file...")
-        try:
-            content = ""
-            file_extension = file_path.lower().split('.')[-1]
-            
-            if file_extension == 'bin':
-                print("⚠️ Binary file detected - skipping processing")
-                content = """
-                The document at the specified URL is a Binary Large Object (BLOB) designed for network performance testing. My analysis indicates that it is not a standard document containing text or structured information.
-                File Analysis:
 
-File Type: Binary Data Stream (application/octet-stream).
-
-Purpose: Network speed and throughput benchmark file. Hosted by Hetzner, a German cloud provider, specifically for testing connection speeds to their data centers.
-
-Content Nature: The file's content consists of pseudo-random, incompressible data or a continuous stream of null characters. This is by design, as using non-compressible data ensures that network hardware or ISP-level compression algorithms do not interfere with the test, providing a true measure of raw bandwidth.
-                """
-                return [content]
-            
-            if file_extension == 'txt':
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    
-            elif file_extension == 'pdf':
-                # Use PyMuPDF (fitz) for much faster PDF processing
-                with fitz.open(stream=file_path, filetype="pdf") as doc:
-                    for page in doc:
-                        content += page.get_text() + "\n\n"
-                        
-            elif file_extension in ['docx', 'doc']:
-                # Requires: pip install python-docx
-                from docx import Document
-                doc = Document(file_path)
-                for para in doc.paragraphs:
-                    content += para.text + "\n\n"
-
-            elif file_extension == 'eml':
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    msg = email.message_from_file(f)
-                    # Get email body
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            if part.get_content_type() == "text/plain":
-                                content += part.get_payload(decode=True).decode() + "\n\n"
-                    else:
-                        content = msg.get_payload(decode=True).decode()
-                    # Add subject and other metadata
-                    content = f"Subject: {msg['subject']}\n\nFrom: {msg['from']}\n\nTo: {msg['to']}\n\n{content}"
-
-            elif file_extension == 'msg':
-                msg = extract_msg.Message(file_path)
-                content = f"Subject: {msg.subject}\n\nFrom: {msg.sender}\n\nTo: {msg.to}\n\n{msg.body}"
-                msg.close()
-            
-            else:
-                raise ValueError(f"Unsupported file format: {file_extension}")
-            
-            # Dynamic chunk sizing based on content and detected page count (where applicable)
-            detected_pages = None
-            if file_extension == 'pdf':
-                try:
-                    with fitz.open(stream=file_path, filetype="pdf") as _doc_count:
-                        detected_pages = _doc_count.page_count
-                except Exception:
-                    detected_pages = None
-
-            dyn_chunk_size, dyn_overlap = DocumentProcessor._compute_dynamic_chunk_params(len(content), detected_pages)
-
-            # Improved chunking algorithm
-            chunks = DocumentProcessor._smart_chunk_text(content, dyn_chunk_size, dyn_overlap)
-            
-            print(f"✅ Processed document and split into {len(chunks)} chunks")
-            return chunks
-            
-        except FileNotFoundError:
-            print(f"Document file '{file_path}' not found. Please provide the document.")
-            return []
-        except Exception as e:
-            print(f"Error loading document: {e}")
-            return []
-    
-    @staticmethod
-    def download_and_process_document(url: str) -> Optional[List[str]]:
-        """
-        Download document from URL and process it (in-memory processing)
-        
-        Args:
-            url: URL of the document to download
-            
-        Returns:
-            List of document chunks or None if failed
-        """
-        try:
-            # Get file extension
-            parsed_url = urlparse(url)
-            file_extension = os.path.splitext(parsed_url.path)[1].lower().replace('.', '')
-
-            # Special-case: secret-token endpoint returns text; treat as plain text
-            if 'register.hackrx.in' in parsed_url.netloc and 'get-secret-token' in parsed_url.path:
-                file_extension = 'txt'
-
-            if not file_extension:
-                # Try to get extension from Content-Type
-                response = requests.head(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-                content_type = response.headers.get('content-type', '').lower()
-                if 'pdf' in content_type:
-                    file_extension = 'pdf'
-                elif 'zip' in content_type:
-                    file_extension = 'zip'
-                elif 'image' in content_type:
-                    file_extension = content_type.split('/')[-1]
-                elif 'text/plain' in content_type:
-                    file_extension = 'txt'
-                elif 'text/html' in content_type or 'application/xhtml' in content_type:
-                    file_extension = 'html'
-                else:
-                    file_extension = 'txt'  # Default to text for safety
-
-            # Don't download binary files
-            if file_extension == 'bin':
-                print("⚠️ Binary file detected - skipping download")
-                content = """
-                The document at the specified URL is a Binary Large Object (BLOB) designed for network performance testing. My analysis indicates that it is not a standard document containing text or structured information.
-                File Analysis:
-
-File Type: Binary Data Stream (application/octet-stream).
-
-Purpose: Network speed and throughput benchmark file. Hosted by Hetzner, a German cloud provider, specifically for testing connection speeds to their data centers.
-
-Content Nature: The file's content consists of pseudo-random, incompressible data or a continuous stream of null characters. This is by design, as using non-compressible data ensures that network hardware or ISP-level compression algorithms do not interfere with the test, providing a true measure of raw bandwidth.
-                """
-                return [content]
-
-            # Download the document directly into memory
-            print(f"📥 Downloading document from URL...")
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            
-            print(f"✅ Document downloaded successfully")
-            
-            # Refine file extension based on actual response headers if needed
-            if not file_extension or file_extension in {''}:
-                ct = response.headers.get('content-type', '').lower()
-                if 'pdf' in ct:
-                    file_extension = 'pdf'
-                elif 'zip' in ct:
-                    file_extension = 'zip'
-                elif 'image' in ct:
-                    file_extension = ct.split('/')[-1]
-                elif 'text/plain' in ct:
-                    file_extension = 'txt'
-                elif 'text/html' in ct or 'application/xhtml' in ct:
-                    file_extension = 'html'
-
-            # Process the downloaded document from memory
-            chunks = DocumentProcessor.load_document_from_memory(response.content, file_extension)
-            
-            return chunks
-            
-        except requests.exceptions.RequestException as e:
-            print(f"❌ Error downloading document: {e}")
-            return None
-        except Exception as e:
-            print(f"❌ Error processing downloaded document: {e}")
-            return None
     
     @staticmethod
     def download_and_process_document_with_size(url: str, chunk_size: int) -> Optional[List[str]]:
@@ -329,87 +158,7 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
             content = ""
             detected_pages = None
             
-            def _is_poor_quality_text(text: str) -> bool:
-                """Heuristics to detect garbled extraction (common with CJK/Indic PDFs)."""
-                if not text or len(text.strip()) < 50:
-                    return True
-                replacement_chars = text.count('\ufffd')
-                if replacement_chars / max(1, len(text)) > 0.002:  # >0.2% replacement chars
-                    return True
-                # If Malayalam is expected but sparsely present relative to total text
-                mal_count = sum(1 for ch in text if '\u0D00' <= ch <= '\u0D7F')
-                if mal_count > 0 and mal_count / max(1, len(text)) < 0.05:
-                    return True
-                return False
 
-            def _ocr_pdf_bytes(pdf_bytes: bytes) -> str:
-                """Fallback OCR using pdf2image + Tesseract (mal+eng)."""
-                try:
-                    from pdf2image import convert_from_bytes
-                    import pytesseract
-                    from PIL import Image
-                except Exception as _imp_err:
-                    print(f"⚠️ OCR dependencies missing: {_imp_err}")
-                    return ""
-                try:
-                    pages: List[Image.Image] = convert_from_bytes(pdf_bytes, dpi=300)
-                except Exception as _conv_err:
-                    print(f"⚠️ Could not rasterize PDF for OCR: {_conv_err}")
-                    return ""
-                ocr_text_parts: List[str] = []
-                for idx, img in enumerate(pages, start=1):
-                    try:
-                        text = pytesseract.image_to_string(img, lang='mal+eng')
-                        if text and text.strip():
-                            ocr_text_parts.append(text.strip())
-                        else:
-                            ocr_text_parts.append("")
-                    except Exception as _ocr_err:
-                        print(f"⚠️ OCR failed on page {idx}: {_ocr_err}")
-                return "\n\n".join([t for t in ocr_text_parts if t])
-
-            def _openai_vision_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
-                """Second-level fallback: Use OpenAI Vision on rasterized PDF pages."""
-                try:
-                    from pdf2image import convert_from_bytes
-                    import base64
-                    from openai import OpenAI
-                except Exception as _imp_err:
-                    print(f"⚠️ OpenAI Vision dependencies missing: {_imp_err}")
-                    return ""
-                try:
-                    pages = convert_from_bytes(pdf_bytes, dpi=200)
-                except Exception as _conv_err:
-                    print(f"⚠️ Could not rasterize PDF for OpenAI Vision: {_conv_err}")
-                    return ""
-
-                client = OpenAI()
-                all_text_parts: List[str] = []
-                for idx, img in enumerate(pages, start=1):
-                    try:
-                        from io import BytesIO
-                        buf = BytesIO()
-                        img.save(buf, format="PNG")
-                        encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
-                        data_url = f"data:image/png;base64,{encoded}"
-                        response = client.chat.completions.create(
-                            model="gpt-4.1-mini-2025-04-14",
-                            messages=[{
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": "Extract the text exactly as it appears. Do not paraphrase. If unreadable, output the closest readable characters. If truly no text, write [NO TEXT]."},
-                                    {"type": "image_url", "image_url": {"url": data_url}}
-                                ]
-                            }],
-                            temperature=0.0,
-                            max_tokens=1200
-                        )
-                        page_text = (response.choices[0].message.content or "").strip()
-                        if page_text and page_text != "[NO TEXT]":
-                            all_text_parts.append(page_text)
-                    except Exception as _oa_err:
-                        print(f"⚠️ OpenAI Vision failed on page {idx}: {_oa_err}")
-                return "\n\n".join(all_text_parts)
             if file_extension == 'bin':
                 print("⚠️ Binary file detected - skipping processing")
                 content = """
@@ -604,148 +353,183 @@ Content Nature: The file's content consists of pseudo-random, incompressible dat
                 raise ValueError(f"Unsupported file format for memory loading: {file_extension}")
             # Dynamic chunk sizing
             dyn_chunk_size, dyn_overlap = DocumentProcessor._compute_dynamic_chunk_params(len(content), detected_pages)
-            chunks = DocumentProcessor._smart_chunk_text(content, dyn_chunk_size, dyn_overlap)
+            chunks = DocumentProcessor._chunk_text_by_sentences(content, dyn_chunk_size, dyn_overlap)
             print(f"✅ Processed document and split into {len(chunks)} chunks")
             return chunks
         except Exception as e:
             print(f"❌ Error loading document from memory: {e}")
             return []
-    
+
     @staticmethod
-    def _smart_chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list:
+    def _ensure_nltk_punkt() -> bool:
+        try:
+            nltk.data.find('tokenizers/punkt')
+            return True
+        except LookupError:
+            try:
+                nltk.download('punkt', quiet=True)
+                # Some environments also require punkt_tab
+                try:
+                    nltk.data.find('tokenizers/punkt')
+                except LookupError:
+                    nltk.download('punkt_tab', quiet=True)
+                return True
+            except Exception:
+                return False
+
+    @staticmethod
+    def _chunk_text_by_sentences(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list:
         """
-        Improved text chunking algorithm that respects sentence boundaries
-        and ensures proper chunk sizes regardless of document structure.
-        
-        Args:
-            text: The text to chunk
-            chunk_size: Target size for each chunk (in characters)
-            overlap: Number of characters to overlap between chunks
-            
-        Returns:
-            List of text chunks
+        Chunk text using robust sentence tokenization (NLTK) with character-based overlap.
+        Falls back to a regex sentence splitter if NLTK data is unavailable.
         """
-        if not text.strip():
+        if not text or not text.strip():
             return []
-        
-        # Clean and normalize the text
+
         text = text.strip()
-        
-        # First, try to split by paragraphs (double newlines)
-        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-        
-        chunks = []
-        current_chunk = ""
-        
-        for paragraph in paragraphs:
-            # If the paragraph itself is larger than chunk_size, split it further
-            if len(paragraph) > chunk_size:
-                # If we have content in current_chunk, save it first
-                if current_chunk.strip():
-                    chunks.append(current_chunk.strip())
-                    current_chunk = ""
-                
-                # Split large paragraph by sentences
-                sub_chunks = DocumentProcessor._split_large_text(paragraph, chunk_size, overlap)
-                chunks.extend(sub_chunks)
-                
-            else:
-                # Check if adding this paragraph would exceed chunk_size
-                test_chunk = current_chunk + ("\n\n" + paragraph if current_chunk else paragraph)
-                
-                if len(test_chunk) > chunk_size and current_chunk:
-                    # Save current chunk and start new one
-                    chunks.append(current_chunk.strip())
-                    current_chunk = paragraph
-                else:
-                    # Add paragraph to current chunk
-                    current_chunk = test_chunk
-        
-        # Add the last chunk if it exists
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
-        
-        # Only filter out completely empty chunks
-        chunks = [chunk for chunk in chunks if chunk.strip()]
-        
-        return chunks
-    
-    @staticmethod
-    def _split_large_text(text: str, chunk_size: int, overlap: int = CHUNK_OVERLAP) -> list:
-        """
-        Split large text that exceeds chunk_size by sentence boundaries.
-        If no sentence boundaries, split by word boundaries.
-        """
-        import re
-        
-        # Try to split by sentences first
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        
-        if len(sentences) == 1:
-            # No sentence boundaries found, split by words
-            return DocumentProcessor._split_by_words(text, chunk_size, overlap)
-        
-        chunks = []
-        current_chunk = ""
-        
+
+        use_nltk = DocumentProcessor._ensure_nltk_punkt()
+        sentences: list[str]
+        if use_nltk:
+            try:
+                print("Using NLTK for sentence tokenization")
+                from nltk.tokenize import sent_tokenize
+                sentences = sent_tokenize(text)
+            except Exception:
+                print("NLTK failed, using regex for sentence tokenization")
+                sentences = re.split(r'(?<=[.!?])\s+', text)
+        else:
+            print("NLTK not found, using regex for sentence tokenization")
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+
+        # Helpers that keep word boundaries intact
+        def tokenize_words(t: str) -> list[str]:
+            try:
+                from nltk.tokenize import word_tokenize
+                return [w for w in word_tokenize(t) if w and not w.isspace()]
+            except Exception:
+                return [w for w in re.split(r"\s+", t) if w]
+
+        def words_to_text(words: list[str]) -> str:
+            # Join with spaces, then clean spaces before punctuation
+            s = " ".join(words)
+            return re.sub(r"\s+([.,!?;:])", r"\1", s).strip()
+
+        def text_len(words: list[str]) -> int:
+            return len(words_to_text(words))
+
+        def build_overlap_words(words: list[str], target_chars: int) -> list[str]:
+            if target_chars <= 0 or not words:
+                return []
+            acc: list[str] = []
+            total = 0
+            # Walk backwards accumulating words until we reach the target character budget
+            for w in reversed(words):
+                # Prepend to preserve order at the end
+                acc.insert(0, w)
+                total = text_len(acc)
+                if total >= target_chars:
+                    break
+            return acc
+
+        chunks: list[str] = []
+        current_words: list[str] = []
+
+        def flush_current_words():
+            nonlocal current_words
+            if current_words:
+                chunks.append(words_to_text(current_words))
+                current_words = []
+
         for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
+            s = sentence.strip()
+            if not s:
                 continue
-                
-            test_chunk = current_chunk + (" " + sentence if current_chunk else sentence)
-            
-            if len(test_chunk) > chunk_size and current_chunk:
-                # Save current chunk
-                chunks.append(current_chunk.strip())
-                
-                # Start new chunk with overlap if possible
-                if overlap > 0 and len(current_chunk) > overlap:
-                    # Take last 'overlap' characters from previous chunk
-                    overlap_text = current_chunk[-overlap:].strip()
-                    current_chunk = overlap_text + " " + sentence
+            s_words = tokenize_words(s)
+
+            if not current_words:
+                # If this sentence alone exceeds the budget, break it by words
+                if text_len(s_words) > chunk_size:
+                    start_idx = 0
+                    while start_idx < len(s_words):
+                        # Fill as many words as fit in the budget
+                        chunk_words: list[str] = []
+                        while start_idx < len(s_words) and text_len(chunk_words + [s_words[start_idx]]) <= chunk_size:
+                            chunk_words.append(s_words[start_idx])
+                            start_idx += 1
+                        if chunk_words:
+                            chunks.append(words_to_text(chunk_words))
+                            # Prepare overlap for next sub-chunk
+                            if overlap > 0:
+                                overlap_words = build_overlap_words(chunk_words, overlap)
+                                current_words = overlap_words.copy()
+                            else:
+                                current_words = []
+                        else:
+                            # Single token longer than budget; force place it
+                            chunks.append(s_words[start_idx])
+                            start_idx += 1
+                            current_words = []
+                    # Completed long sentence handling; proceed to next sentence
+                    continue
                 else:
-                    current_chunk = sentence
+                    current_words = s_words.copy()
+                    continue
+
+            # Try to append full sentence to current chunk
+            if text_len(current_words) + 1 + text_len(s_words) <= chunk_size:
+                current_words += [" "]  # placeholder will be normalized by words_to_text spacing
+                current_words += s_words
+                # Remove explicit space token effect by merging properly in words_to_text
+                # We keep simple: recompute from text each time is costly; accept minor overhead
+                current_words = tokenize_words(words_to_text(current_words))
             else:
-                current_chunk = test_chunk
-        
-        # Add the last chunk
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
-            
-        return chunks
-    
-    @staticmethod
-    def _split_by_words(text: str, chunk_size: int, overlap: int = CHUNK_OVERLAP) -> list:
-        """
-        Split text by word boundaries when sentence splitting isn't possible.
-        """
-        words = text.split()
-        chunks = []
-        current_chunk = ""
-        
-        for word in words:
-            test_chunk = current_chunk + (" " + word if current_chunk else word)
-            
-            if len(test_chunk) > chunk_size and current_chunk:
-                # Save current chunk
-                chunks.append(current_chunk.strip())
-                
-                # Start new chunk with overlap
+                # Flush current chunk and start a new one with word-level overlap
+                prev_words = current_words.copy()
+                flush_current_words()
                 if overlap > 0:
-                    current_words = current_chunk.split()
-                    if len(current_words) > 3:  # Keep some context
-                        overlap_words = current_words[-3:]
-                        current_chunk = " ".join(overlap_words) + " " + word
-                    else:
-                        current_chunk = word
+                    current_words = build_overlap_words(prev_words, overlap)
                 else:
-                    current_chunk = word
-            else:
-                current_chunk = test_chunk
-        
-        # Add the last chunk
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
-            
-        return chunks
+                    current_words = []
+
+                # Now add the sentence, possibly splitting by words if still too large
+                if text_len(s_words) <= chunk_size - text_len(current_words):
+                    # It fits with current overlap
+                    if current_words:
+                        combined = tokenize_words(words_to_text(current_words) + " " + words_to_text(s_words))
+                        current_words = combined
+                    else:
+                        current_words = s_words.copy()
+                else:
+                    # Split sentence by words respecting budget and overlap
+                    start_idx = 0
+                    while start_idx < len(s_words):
+                        remaining_budget = max(0, chunk_size - text_len(current_words))
+                        chunk_words: list[str] = []
+                        while start_idx < len(s_words) and text_len(chunk_words + [s_words[start_idx]]) <= (remaining_budget if current_words else chunk_size):
+                            chunk_words.append(s_words[start_idx])
+                            start_idx += 1
+                        if current_words and chunk_words:
+                            # Complete current chunk with these words
+                            combined = tokenize_words(words_to_text(current_words) + " " + words_to_text(chunk_words))
+                            chunks.append(words_to_text(combined))
+                            # Prepare next current via overlap
+                            if overlap > 0:
+                                current_words = build_overlap_words(combined, overlap)
+                            else:
+                                current_words = []
+                        elif chunk_words:
+                            # No current_words; emit a full new chunk
+                            chunks.append(words_to_text(chunk_words))
+                            if overlap > 0:
+                                current_words = build_overlap_words(chunk_words, overlap)
+                            else:
+                                current_words = []
+                        else:
+                            # Force add single token if nothing fits
+                            chunks.append(s_words[start_idx])
+                            start_idx += 1
+                            current_words = []
+
+        flush_current_words()
+        return [c for c in chunks if c]
