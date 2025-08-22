@@ -67,9 +67,6 @@ class DocumentProcessor:
             parsed_url = urlparse(url)
             file_extension = os.path.splitext(parsed_url.path)[1].lower().replace('.', '')
             
-            # Special-case: secret-token endpoint returns text; treat as plain text
-            if 'register.hackrx.in' in parsed_url.netloc and 'get-secret-token' in parsed_url.path:
-                file_extension = 'txt'
             if not file_extension:
                 # Try to get extension from Content-Type
                 response = requests.head(url, timeout=30, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"})
