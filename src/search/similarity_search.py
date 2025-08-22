@@ -1,4 +1,4 @@
-from thefuzz import fuzz
+from thefuzz import fuzz  # NOTE: fuzzy disabled below; kept import to avoid dependency surprises
 import json
 import aiofiles
 import os
@@ -71,52 +71,14 @@ async def find_similar_questions(new_questions: List[str], document_url: str, qa
             }
         
         print(f"📄 Found {len(document_qa_entries)} Q&A entries for document: {document_url}")
-        
-        # Step 2: Find similar questions within the matched document
-        matched_questions = []
-        unmatched_questions = []
-        similarity_scores = {}
-        
-        # For each new question, find the best match in the document's stored data
-        for new_question in new_questions:
-            best_match = None
-            best_score = 0
-            best_answer = None
-            best_document = None
-            
-            # Search through all Q&A entries for this specific document
-            for qa_entry in document_qa_entries:
-                stored_questions = qa_entry.get('questions', [])
-                stored_answers = qa_entry.get('answers', [])
-                
-                # Check each stored question against the new question
-                for i, stored_question in enumerate(stored_questions):
-                    score = fuzz.ratio(new_question.lower(), stored_question.lower())
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_match = stored_question
-                        best_answer = stored_answers[i] if i < len(stored_answers) else None
-                        best_document = qa_entry.get('document_name', 'Unknown')
-            
-            similarity_scores[new_question] = best_score
-            
-            if best_score >= threshold and best_match and best_answer:
-                matched_questions.append({
-                    'new_question': new_question,
-                    'matched_question': best_match,
-                    'answer': best_answer,
-                    'document_name': best_document,
-                    'document_url': document_url,
-                    'similarity_score': best_score
-                })
-            else:
-                unmatched_questions.append(new_question)
-        
+
+        # Similarity disabled entirely: always treat as no matches so the pipeline
+        # proceeds to hybrid search and answer generation for all questions
+        similarity_scores = {q: 0 for q in new_questions}
         return {
-            'found_similar': len(matched_questions) > 0,
-            'matched_questions': matched_questions,
-            'unmatched_questions': unmatched_questions,
+            'found_similar': False,
+            'matched_questions': [],
+            'unmatched_questions': new_questions,
             'similarity_scores': similarity_scores,
             'document_matched': document_matched
         }
